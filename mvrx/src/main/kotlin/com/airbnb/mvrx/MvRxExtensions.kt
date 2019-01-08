@@ -118,7 +118,7 @@ fun <S : MvRxState> _initialStateProvider(stateClass: Class<S>, args: Any?): S {
         val argType = it::class.java
 
         stateClass.constructors.firstOrNull { constructor ->
-            constructor.parameterTypes.size == 1 && isAssignableTo(constructor.parameterTypes[0], argType)
+            constructor.parameterTypes.size == 1 && isAssignableTo(argType, constructor.parameterTypes[0])
             }
         }
 
@@ -177,6 +177,6 @@ fun <V : Any> args() = object : ReadOnlyProperty<Fragment, V> {
  * at the offset it was requested at.
  *
  * This will replace *all contents* starting at the offset with the new list.
- * For example: [1,2,3].appendAt([4], 2) == [1,4]]
+ * For example: [1,2,3].appendAt([4], 1) == [1,4]]
  */
 fun <T : Any> List<T>.appendAt(other: List<T>?, offset: Int) = subList(0, offset.coerceIn(0, size)) + (other ?: emptyList())

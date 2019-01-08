@@ -5,6 +5,7 @@ import android.arch.lifecycle.ViewModel
 import android.support.annotation.CallSuper
 import android.support.annotation.RestrictTo
 import android.util.Log
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.Single
 import io.reactivex.android.schedulers.AndroidSchedulers
@@ -14,6 +15,9 @@ import io.reactivex.functions.Consumer
 import io.reactivex.schedulers.Schedulers
 import kotlin.reflect.KProperty1
 import kotlin.reflect.KVisibility
+import kotlin.reflect.full.declaredMemberProperties
+import kotlin.reflect.full.memberProperties
+import kotlin.reflect.full.primaryConstructor
 
 /**
  * To use MvRx, create your own base MvRxViewModel that extends this one and sets debugMode.
@@ -22,18 +26,34 @@ import kotlin.reflect.KVisibility
  */
 abstract class BaseMvRxViewModel<S : MvRxState>(
     initialState: S,
-    private val debugMode: Boolean = false,
+    debugMode: Boolean = false,
     private val stateStore: MvRxStateStore<S> = RealMvRxStateStore(initialState)
 ) : ViewModel() {
+    private val debugMode = if (MvRxTestOverrides.FORCE_DEBUG == null) debugMode else MvRxTestOverrides.FORCE_DEBUG
+
     private val tag by lazy { javaClass.simpleName }
     private val disposables = CompositeDisposable()
     private lateinit var mutableStateChecker: MutableStateChecker<S>
 
     init {
-        if (debugMode) {
+        // Kotlin reflection has a large overhead the first time you run it
+        // but then is pretty fast on subsequent times. Running these methods now will
+        // initialize kotlin reflect and warm the cache so that when persistState() gets
+        // called synchronously in onSaveInstanceState() on the main thread, it will be
+        // much faster.
+        // This improved performance 10-100x for a state with 100 @PersistStae properties.
+        Completable.fromCallable {
+            initialState::class.primaryConstructor?.parameters?.forEach { it.annotations }
+            initialState::class.declaredMemberProperties.forEach {
+                @Suppress("UNCHECKED_CAST")
+                (it as? KProperty1<S, Any?>)?.get(initialState)
+            }
+        }.subscribeOn(Schedulers.computation()).subscribe()
+
+        if (this.debugMode) {
             mutableStateChecker = MutableStateChecker(initialState)
 
-            Observable.fromCallable { validateState(initialState) }
+            Completable.fromCallable { validateState(initialState) }
                 .subscribeOn(Schedulers.computation()).subscribe()
         }
     }
@@ -67,7 +87,15 @@ abstract class BaseMvRxViewModel<S : MvRxState>(
                 val firstState = this.reducer()
                 val secondState = this.reducer()
 
-                if (firstState != secondState) throw IllegalArgumentException("Your reducer must be pure!")
+                if (firstState != secondState) {
+                    @Suppress("UNCHECKED_CAST")
+                    val changedProp = firstState::class.memberProperties
+                            .map { it as KProperty1<S, *> }
+                            .first { it.get(firstState) != it.get(secondState) }
+                    throw IllegalArgumentException("Your reducer must be pure! ${changedProp.name} changed from " +
+                            "${changedProp.get(firstState)} to ${changedProp.get(secondState)}. " +
+                            "Ensure that your state properties properly implement hashCode.")
+                }
                 mutableStateChecker.onStateChanged(firstState)
 
                 firstState
