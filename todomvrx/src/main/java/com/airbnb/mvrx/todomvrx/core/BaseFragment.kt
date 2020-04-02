@@ -2,10 +2,10 @@ package com.airbnb.mvrx.todomvrx.core
 
 import android.os.Bundle
 import android.os.Parcelable
-import android.support.annotation.CallSuper
-import android.support.annotation.IdRes
-import android.support.design.widget.CoordinatorLayout
-import android.support.design.widget.FloatingActionButton
+import androidx.annotation.CallSuper
+import androidx.annotation.IdRes
+import androidx.coordinatorlayout.widget.CoordinatorLayout
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -29,18 +29,27 @@ abstract class BaseFragment : BaseMvRxFragment() {
     protected lateinit var coordinatorLayout: CoordinatorLayout
     protected lateinit var recyclerView: EpoxyRecyclerView
     protected lateinit var fab: FloatingActionButton
-    protected val epoxyController by lazy {epoxyController() }
+    protected val epoxyController by lazy { epoxyController() }
     // Used to keep track of task changes to determine if we should show a snackbar.
     private var oldTasks: Tasks? = null
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        epoxyController.onRestoreInstanceState(savedInstanceState)
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? =
-            inflater.inflate(R.layout.fragment_base, container, false).apply {
-                coordinatorLayout = findViewById(R.id.coordinator_layout)
-                fab = findViewById(R.id.fab)
-                recyclerView = findViewById(R.id.recycler_view)
-                recyclerView.setController(epoxyController)
-            }
+        inflater.inflate(R.layout.fragment_base, container, false).apply {
+            coordinatorLayout = findViewById(R.id.coordinator_layout)
+            fab = findViewById(R.id.fab)
+            recyclerView = findViewById(R.id.recycler_view)
+            recyclerView.setController(epoxyController)
+        }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        epoxyController.onSaveInstanceState(outState)
+    }
 
     @CallSuper
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

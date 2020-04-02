@@ -1,9 +1,9 @@
 package com.airbnb.mvrx.todomvrx.data.source.db
 
-import android.arch.persistence.room.Dao
-import android.arch.persistence.room.Insert
-import android.arch.persistence.room.OnConflictStrategy
-import android.arch.persistence.room.Query
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
 import com.airbnb.mvrx.todomvrx.data.Task
 import com.airbnb.mvrx.todomvrx.data.Tasks
 import io.reactivex.Single
@@ -11,7 +11,8 @@ import io.reactivex.Single
 /**
  * Data Access Object for the tasks table.
  */
-@Dao interface TasksDao {
+@Dao
+interface TasksDao {
 
     /**
      * Select all tasks from the tasks table.
@@ -27,22 +28,21 @@ import io.reactivex.Single
      * @param task the task to be inserted.
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun saveTask(task: Task): Long
+    fun saveTask(task: Task)
 
     /**
-     * Update the complete status of a task
-     *
-     * @param id    id of the task
+     * Update the complete status of a task.
+     * @param id id of the task
      * @param complete status to be updated
      */
     @Query("UPDATE tasks SET complete = :complete WHERE id = :id")
-    fun setComplete(id: String, complete: Boolean): Long
+    fun setComplete(id: String, complete: Boolean)
 
     /**
      * Delete a task by id.
      */
     @Query("DELETE FROM Tasks WHERE id = :id")
-    fun deleteTask(id: String): Int
+    fun deleteTask(id: String)
 
     /**
      * Delete all complete tasks from the table.

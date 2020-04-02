@@ -1,12 +1,11 @@
 package com.airbnb.mvrx.sample.features.dadjoke
 
-import android.support.v4.app.FragmentActivity
 import com.airbnb.mvrx.Async
-import com.airbnb.mvrx.BaseMvRxViewModel
 import com.airbnb.mvrx.Loading
 import com.airbnb.mvrx.MvRxState
 import com.airbnb.mvrx.MvRxViewModelFactory
 import com.airbnb.mvrx.Uninitialized
+import com.airbnb.mvrx.ViewModelContext
 import com.airbnb.mvrx.sample.core.MvRxViewModel
 import com.airbnb.mvrx.sample.models.Joke
 import com.airbnb.mvrx.sample.models.JokesResponse
@@ -17,18 +16,18 @@ import org.koin.android.ext.android.inject
 private const val JOKES_PER_PAGE = 5
 
 data class DadJokeIndexState(
-        /** We use this request to store the list of all jokes */
-        val jokes: List<Joke> = emptyList(),
-        /** We use this Async to keep track of the state of the current network request */
-        val request: Async<JokesResponse> = Uninitialized
+    /** We use this request to store the list of all jokes. */
+    val jokes: List<Joke> = emptyList(),
+    /** We use this Async to keep track of the state of the current network request. */
+    val request: Async<JokesResponse> = Uninitialized
 ) : MvRxState
 
 /**
  * initialState *must* be implemented as a constructor parameter.
  */
 class DadJokeIndexViewModel(
-        initialState: DadJokeIndexState,
-        private val dadJokeService: DadJokeService
+    initialState: DadJokeIndexState,
+    private val dadJokeService: DadJokeService
 ) : MvRxViewModel<DadJokeIndexState>(initialState) {
 
     init {
@@ -39,9 +38,9 @@ class DadJokeIndexViewModel(
         if (state.request is Loading) return@withState
 
         dadJokeService
-                .search(page = state.jokes.size / JOKES_PER_PAGE + 1, limit = JOKES_PER_PAGE)
-                .subscribeOn(Schedulers.io())
-                .execute { copy(request = it, jokes = jokes + (it()?.results ?: emptyList())) }
+            .search(page = state.jokes.size / JOKES_PER_PAGE + 1, limit = JOKES_PER_PAGE)
+            .subscribeOn(Schedulers.io())
+            .execute { copy(request = it, jokes = jokes + (it()?.results ?: emptyList())) }
     }
 
     /**
@@ -50,9 +49,10 @@ class DadJokeIndexViewModel(
      *
      * @see MvRxViewModelFactory
      */
-    companion object : MvRxViewModelFactory<DadJokeIndexState> {
-        @JvmStatic override fun create(activity: FragmentActivity, state: DadJokeIndexState): BaseMvRxViewModel<DadJokeIndexState> {
-            val service: DadJokeService by activity.inject()
+    companion object : MvRxViewModelFactory<DadJokeIndexViewModel, DadJokeIndexState> {
+
+        override fun create(viewModelContext: ViewModelContext, state: DadJokeIndexState): DadJokeIndexViewModel {
+            val service: DadJokeService by viewModelContext.activity.inject()
             return DadJokeIndexViewModel(state, service)
         }
     }

@@ -1,8 +1,9 @@
 package com.airbnb.mvrx
 
-import android.arch.lifecycle.ViewModelProviders
-import android.support.v4.app.Fragment
-import android.support.v4.app.FragmentActivity
+import androidx.annotation.RestrictTo
+import androidx.annotation.RestrictTo.Scope.LIBRARY
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
@@ -23,22 +24,82 @@ inline fun <T, reified VM : BaseMvRxViewModel<S>, reified S : MvRxState> T.fragm
     viewModelClass: KClass<VM> = VM::class,
     crossinline keyFactory: () -> String = { viewModelClass.java.name }
 ) where T : Fragment, T : MvRxView = lifecycleAwareLazy(this) {
-    val stateFactory: () -> S = ::_fragmentViewModelInitialStateProvider
-    MvRxViewModelProvider.get(viewModelClass.java, this, keyFactory(), stateFactory)
-        .apply { subscribe(this@fragmentViewModel, subscriber = { postInvalidate() }) }
+    MvRxViewModelProvider.get(
+        viewModelClass.java,
+        S::class.java,
+        FragmentViewModelContext(this.requireActivity(), _fragmentArgsProvider(), this),
+        keyFactory()
+    ).apply { subscribe(this@fragmentViewModel, subscriber = { postInvalidate() }) }
+}
+
+/**
+ * Gets or creates a ViewModel scoped to a parent fragment. This delegate will walk up the parentFragment hierarchy
+ * until it finds a Fragment that can provide the correct ViewModel. If no parent fragments can provide the ViewModel,
+ * a new one will be created in top-most parent Fragment.
+ */
+inline fun <T, reified VM : BaseMvRxViewModel<S>, reified S : MvRxState> T.parentFragmentViewModel(
+    viewModelClass: KClass<VM> = VM::class,
+    crossinline keyFactory: () -> String = { viewModelClass.java.name }
+): Lazy<VM> where T : Fragment, T : MvRxView = lifecycleAwareLazy(this) {
+    requireNotNull(parentFragment) { "There is no parent fragment for ${this::class.java.simpleName}!" }
+    var fragment: Fragment? = parentFragment
+    val key = keyFactory()
+    while (fragment != null) {
+        try {
+            return@lifecycleAwareLazy MvRxViewModelProvider.get(
+                viewModelClass.java,
+                S::class.java,
+                FragmentViewModelContext(this.requireActivity(), _fragmentArgsProvider(), fragment),
+                key,
+                forExistingViewModel = true
+            ).apply { subscribe(this@parentFragmentViewModel, subscriber = { postInvalidate() }) }
+        } catch (e: ViewModelDoesNotExistException) {
+            fragment = fragment.parentFragment
+        }
+    }
+
+    // ViewModel was not found. Create a new one in the top-most parent.
+    var topParentFragment = parentFragment
+    while (topParentFragment?.parentFragment != null) {
+        topParentFragment = topParentFragment.parentFragment
+    }
+    val viewModelContext = FragmentViewModelContext(this.requireActivity(), _fragmentArgsProvider(), topParentFragment!!)
+    return@lifecycleAwareLazy MvRxViewModelProvider.get(viewModelClass.java, S::class.java, viewModelContext, keyFactory())
+        .apply { subscribe(this@parentFragmentViewModel, subscriber = { postInvalidate() }) }
+}
+
+/**
+ * Gets or creates a ViewModel scoped to a target fragment. Throws [IllegalStateException] if there is no target fragment.
+ */
+inline fun <T, reified VM : BaseMvRxViewModel<S>, reified S : MvRxState> T.targetFragmentViewModel(
+    viewModelClass: KClass<VM> = VM::class,
+    crossinline keyFactory: () -> String = { viewModelClass.java.name }
+): Lazy<VM> where T : Fragment, T : MvRxView = lifecycleAwareLazy(this) {
+    val targetFragment = requireNotNull(targetFragment) { "There is no target fragment for ${this::class.java.simpleName}!" }
+    MvRxViewModelProvider.get(
+        viewModelClass.java,
+        S::class.java,
+        FragmentViewModelContext(this.requireActivity(), targetFragment._fragmentArgsProvider(), targetFragment),
+        keyFactory()
+    )
+        .apply { subscribe(this@targetFragmentViewModel, subscriber = { postInvalidate() }) }
 }
 
 /**
  * [activityViewModel] except it will throw [IllegalStateException] if the ViewModel doesn't already exist.
  * Use this for screens in the middle of a flow that cannot reasonably be an entrypoint to the flow.
  */
-inline fun <T, reified VM : BaseMvRxViewModel<S>, S : MvRxState> T.existingViewModel(
+inline fun <T, reified VM : BaseMvRxViewModel<S>, reified S : MvRxState> T.existingViewModel(
     viewModelClass: KClass<VM> = VM::class,
     crossinline keyFactory: () -> String = { viewModelClass.java.name }
 ) where T : Fragment, T : MvRxView = lifecycleAwareLazy(this) {
-    val factory = MvRxFactory { throw IllegalStateException("ViewModel for ${requireActivity()}[${keyFactory()}] does not exist yet!") }
-    ViewModelProviders.of(requireActivity(), factory).get(keyFactory(), viewModelClass.java)
-        .apply { subscribe(this@existingViewModel, subscriber = { postInvalidate() }) }
+    MvRxViewModelProvider.get(
+        viewModelClass.java,
+        S::class.java,
+        ActivityViewModelContext(requireActivity(), _fragmentArgsProvider()),
+        keyFactory(),
+        forExistingViewModel = true
+    ).apply { subscribe(this@existingViewModel, subscriber = { postInvalidate() }) }
 }
 
 /**
@@ -48,92 +109,22 @@ inline fun <T, reified VM : BaseMvRxViewModel<S>, reified S : MvRxState> T.activ
     viewModelClass: KClass<VM> = VM::class,
     noinline keyFactory: () -> String = { viewModelClass.java.name }
 ) where T : Fragment, T : MvRxView = lifecycleAwareLazy(this) {
-    val stateFactory: () -> S = { _activityViewModelInitialStateProvider(keyFactory) }
-    if (requireActivity() !is MvRxViewModelStoreOwner) throw IllegalArgumentException("Your Activity must be a MvRxViewModelStoreOwner!")
-    MvRxViewModelProvider.get(viewModelClass.java, requireActivity(), keyFactory(), stateFactory)
-        .apply { subscribe(this@activityViewModel, subscriber = { postInvalidate() }) }
+    MvRxViewModelProvider.get(
+        viewModelClass.java,
+        S::class.java,
+        ActivityViewModelContext(requireActivity(), _fragmentArgsProvider()),
+        keyFactory()
+    ).apply { subscribe(this@activityViewModel, subscriber = { postInvalidate() }) }
 }
 
 /**
  * For internal use only. Public for inline.
  *
- * Looks for [MvRx.KEY_ARG] on the arguments of the fragment receiver to create an instance of the State class.
- * The state class must have a matching single arg constructor.
- *
- * If no MvRx fragment args exist it attempts to use a empty constructor. Otherwise an exception is thrown.
- *
- * Also adds the fragment's MvRx args to the host Activity's [MvRxViewModelStore] so that they can be used to recreate initial state
- * in a new process.
+ * Looks for [MvRx.KEY_ARG] on the arguments of the fragments.
  */
 @Suppress("FunctionName")
-inline fun <reified S : MvRxState, T : Fragment> T._activityViewModelInitialStateProvider(keyFactory: () -> String): S {
-    val args: Any? = arguments?.get(MvRx.KEY_ARG)
-    val activity = requireActivity()
-    if (activity is MvRxViewModelStoreOwner) {
-        activity.mvrxViewModelStore._saveActivityViewModelArgs(keyFactory(), args)
-    } else {
-        throw IllegalArgumentException("Your Activity must be a MvRxViewModelStoreOwner!")
-    }
-    return _initialStateProvider(S::class.java, args)
-}
-
-/**
- * For internal use only. Public for inline.
- *
- * Looks for [MvRx.KEY_ARG] on the arguments of the fragment receiver to create an instance of the State class.
- * The state class must have a matching single arg constructor.
- *
- * If no MvRx fragment args exist it attempts to use a empty constructor. Otherwise an exception is thrown.
- */
-@Suppress("FunctionName")
-inline fun <reified S : MvRxState, T : Fragment> T._fragmentViewModelInitialStateProvider(): S {
-    val args: Any? = arguments?.get(MvRx.KEY_ARG)
-    return _initialStateProvider(S::class.java, args)
-}
-
-/**
- * For internal use only. Public for inline.
- *
- * Looks for [MvRx.KEY_ARG] in intent extras on activity receiver to create an instance of the State class.
- * The state class must have a matching single arg constructor.
- *
- * If no MvRx activity args exist it attempts to use a empty constructor. Otherwise an exception is thrown.
- */
-@Suppress("FunctionName")
-inline fun <reified S : MvRxState, T : FragmentActivity> T._activityViewModelInitialStateProvider(): S {
-    val args: Any? = intent.extras?.get(MvRx.KEY_ARG)
-    return _initialStateProvider(S::class.java, args)
-}
-
-/**
- * For internal use only. Public for inline.
- *
- * Searches [stateClass] for a single argument constructor matching the type of [args]. If [args] is null, then
- * no arg constructor is invoked.
- *
- */
-@Suppress("FunctionName") // Public for inline.
-fun <S : MvRxState> _initialStateProvider(stateClass: Class<S>, args: Any?): S {
-    val argsConstructor = args?.let {
-        val argType = it::class.java
-
-        stateClass.constructors.firstOrNull { constructor ->
-            constructor.parameterTypes.size == 1 && isAssignableTo(argType, constructor.parameterTypes[0])
-            }
-        }
-
-    @Suppress("UNCHECKED_CAST")
-    return argsConstructor?.newInstance(args) as? S
-        ?: try {
-            stateClass.newInstance()
-        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
-            null
-        }
-        ?: throw IllegalStateException(
-            "Attempt to auto create the MvRx state class ${stateClass.simpleName} has failed. It must have default values for every property or a " +
-                "secondary constructor for ${args?.javaClass?.simpleName ?: "a fragment argument"}. "
-        )
-}
+@RestrictTo(LIBRARY)
+fun <T : Fragment> T._fragmentArgsProvider(): Any? = arguments?.get(MvRx.KEY_ARG)
 
 /**
  * [fragmentViewModel] except scoped to the current Activity. Use this to share state between different Fragments.
@@ -141,10 +132,13 @@ fun <S : MvRxState> _initialStateProvider(stateClass: Class<S>, args: Any?): S {
 inline fun <T, reified VM : BaseMvRxViewModel<S>, reified S : MvRxState> T.viewModel(
     viewModelClass: KClass<VM> = VM::class,
     crossinline keyFactory: () -> String = { viewModelClass.java.name }
-) where T : FragmentActivity,
-        T : MvRxViewModelStoreOwner = lifecycleAwareLazy(this) {
-    val stateFactory: () -> S = { _activityViewModelInitialStateProvider() }
-    MvRxViewModelProvider.get(viewModelClass.java, this, keyFactory(), stateFactory)
+) where T : FragmentActivity = lifecycleAwareLazy(this) {
+    MvRxViewModelProvider.get(
+        viewModelClass.java,
+        S::class.java,
+        ActivityViewModelContext(this, intent.extras?.get(MvRx.KEY_ARG)),
+        keyFactory()
+    )
 }
 
 /**

@@ -1,15 +1,15 @@
 package com.airbnb.mvrx
 
-import android.support.v4.util.ArrayMap
-import android.support.v4.util.LongSparseArray
-import android.support.v4.util.SparseArrayCompat
+import android.os.Build
 import android.util.SparseArray
+import androidx.collection.ArrayMap
+import androidx.collection.LongSparseArray
+import androidx.collection.SparseArrayCompat
+import java.lang.reflect.Field
+import java.lang.reflect.Modifier
+import java.lang.reflect.ParameterizedType
+import kotlin.reflect.KCallable
 import kotlin.reflect.KClass
-import kotlin.reflect.KMutableProperty
-import kotlin.reflect.KProperty1
-import kotlin.reflect.full.declaredMemberProperties
-import kotlin.reflect.full.isSubtypeOf
-import kotlin.reflect.full.starProjectedType
 
 private const val IMMUTABLE_LIST_MESSAGE =
     "Use the immutable listOf(...) method instead. You can append it with `val newList = listA + listB`"
@@ -25,25 +25,52 @@ private const val IMMUTABLE_MAP_MESSAGE =
  * As a result, you may not use MutableList, mutableListOf(...) or the map variants by convention only.
  */
 internal fun KClass<*>.assertImmutability() {
-    require(this.isData) { "MvRx state must be a data class!" }
+    require(java.isData) { "MvRx state must be a data class!" }
 
-    fun KProperty1<*, *>.isSubtype(klass: KClass<*>) =
-        returnType.isSubtypeOf(klass.starProjectedType)
-
-    this.declaredMemberProperties.forEach {
-        when {
-            it is KMutableProperty<*> -> "State property ${it.name} must be a val, not a var."
-            it.isSubtype(ArrayList::class) -> "You cannot use ArrayList for ${it.name}.\n$IMMUTABLE_LIST_MESSAGE"
-            it.isSubtype(SparseArray::class) -> "You cannot use SparseArray for ${it.name}.\n$IMMUTABLE_LIST_MESSAGE"
-            it.isSubtype(LongSparseArray::class) -> "You cannot use LongSparseArray for ${it.name}.\n$IMMUTABLE_LIST_MESSAGE"
-            it.isSubtype(SparseArrayCompat::class) -> "You cannot use SparseArrayCompat for ${it.name}.\n$IMMUTABLE_LIST_MESSAGE"
-            it.isSubtype(ArrayMap::class) -> "You cannot use ArrayMap for ${it.name}.\n$IMMUTABLE_MAP_MESSAGE"
-            it.isSubtype(android.util.ArrayMap::class) -> "You cannot use ArrayMap for ${it.name}.\n$IMMUTABLE_MAP_MESSAGE"
-            it.isSubtype(HashMap::class) -> "You cannot use HashMap for ${it.name}.\n$IMMUTABLE_MAP_MESSAGE"
-            else -> null
-        }?.let { throw IllegalArgumentException(it) }
+    fun Field.isSubtype(vararg classes: KClass<*>): Boolean {
+        return classes.any { klass ->
+            return when (val returnType = this.type) {
+                is ParameterizedType -> klass.java.isAssignableFrom(returnType.rawType as Class<*>)
+                is Class -> klass.java.isAssignableFrom(returnType)
+                else -> false
+            }
+        }
     }
+
+    java.declaredFields
+        // During tests, jacoco can add a transient field called jacocoData.
+        .filterNot { Modifier.isTransient(it.modifiers) }
+        .forEach { prop ->
+            when {
+                !Modifier.isFinal(prop.modifiers) -> "State property ${prop.name} must be a val, not a var."
+                prop.isSubtype(ArrayList::class) -> "You cannot use ArrayList for ${prop.name}.\n$IMMUTABLE_LIST_MESSAGE"
+                prop.isSubtype(SparseArray::class) -> "You cannot use SparseArray for ${prop.name}.\n$IMMUTABLE_LIST_MESSAGE"
+                prop.isSubtype(LongSparseArray::class) -> "You cannot use LongSparseArray for ${prop.name}.\n$IMMUTABLE_LIST_MESSAGE"
+                prop.isSubtype(SparseArrayCompat::class) -> "You cannot use SparseArrayCompat for ${prop.name}.\n$IMMUTABLE_LIST_MESSAGE"
+                prop.isSubtype(ArrayMap::class) -> "You cannot use ArrayMap for ${prop.name}.\n$IMMUTABLE_MAP_MESSAGE"
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT &&
+                    prop.isSubtype(android.util.ArrayMap::class) -> "You cannot use ArrayMap for ${prop.name}.\n$IMMUTABLE_MAP_MESSAGE"
+                prop.isSubtype(HashMap::class) -> "You cannot use HashMap for ${prop.name}.\n$IMMUTABLE_MAP_MESSAGE"
+                prop.isSubtype(Function::class, KCallable::class) -> {
+                    "You cannot use functions inside MvRx state. Only pure data should be represented: ${prop.name}"
+                }
+                else -> null
+            }?.let { throw IllegalArgumentException(it) }
+        }
 }
+
+/**
+ * Since we can only use java reflection, this basically duck types a data class.
+ * componentN methods are also used for @PersistState.
+ */
+private val Class<*>.isData: Boolean
+    get() {
+        declaredMethods.firstOrNull { it.name == "copy\$default" } ?: return false
+        declaredMethods.firstOrNull { it.name == "component1" } ?: return false
+        declaredMethods.firstOrNull { it.name == "equals" } ?: return false
+        declaredMethods.firstOrNull { it.name == "hashCode" } ?: return false
+        return true
+    }
 
 /**
  * Checks that a state's value is not changed over its lifetime.
@@ -70,5 +97,3 @@ internal class MutableStateChecker<S : MvRxState>(val initialState: S) {
         previousState = StateWrapper(newState)
     }
 }
-
-

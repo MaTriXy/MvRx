@@ -1,6 +1,6 @@
 package com.airbnb.mvrx;
 
-import android.support.annotation.RestrictTo;
+import androidx.annotation.RestrictTo;
 
 import com.airbnb.mvrx.test.MvRxTestRule;
 
@@ -12,5 +12,9 @@ import com.airbnb.mvrx.test.MvRxTestRule;
 public class MvRxTestOverridesProxy {
     public static void forceMvRxDebug(Boolean debug) {
         MvRxTestOverrides.FORCE_DEBUG = debug;
+    }
+
+    public static void forceDisableLifecycleAwareObserver(Boolean disableLifecycleAwareObserver) {
+        MvRxTestOverrides.FORCE_DISABLE_LIFECYCLE_AWARE_OBSERVER = disableLifecycleAwareObserver;
     }
 }

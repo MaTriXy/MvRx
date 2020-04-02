@@ -1,11 +1,10 @@
 package com.airbnb.mvrx.todomvrx
 
-import android.support.v4.app.FragmentActivity
 import com.airbnb.mvrx.Async
-import com.airbnb.mvrx.BaseMvRxViewModel
 import com.airbnb.mvrx.MvRxState
 import com.airbnb.mvrx.MvRxViewModelFactory
 import com.airbnb.mvrx.Uninitialized
+import com.airbnb.mvrx.ViewModelContext
 import com.airbnb.mvrx.todomvrx.core.MvRxViewModel
 import com.airbnb.mvrx.todomvrx.data.Task
 import com.airbnb.mvrx.todomvrx.data.Tasks
@@ -19,10 +18,10 @@ import com.airbnb.mvrx.todomvrx.util.upsert
 import io.reactivex.Observable
 
 data class TasksState(
-        val tasks: Tasks = emptyList(),
-        val taskRequest: Async<Tasks> = Uninitialized,
-        val isLoading: Boolean = false,
-        val lastEditedTask: String? = null
+    val tasks: Tasks = emptyList(),
+    val taskRequest: Async<Tasks> = Uninitialized,
+    val isLoading: Boolean = false,
+    val lastEditedTask: String? = null
 ) : MvRxState
 
 class TasksViewModel(initialState: TasksState, private val sources: List<TasksDataSource>) : MvRxViewModel<TasksState>(initialState) {
@@ -34,9 +33,9 @@ class TasksViewModel(initialState: TasksState, private val sources: List<TasksDa
 
     fun refreshTasks() {
         Observable.merge(sources.map { it.getTasks().toObservable() })
-                .doOnSubscribe { setState { copy(isLoading = true) } }
-                .doOnComplete { setState { copy(isLoading = false) } }
-                .execute { copy(taskRequest = it, tasks = it() ?: tasks, lastEditedTask = null) }
+            .doOnSubscribe { setState { copy(isLoading = true) } }
+            .doOnComplete { setState { copy(isLoading = false) } }
+            .execute { copy(taskRequest = it, tasks = it() ?: tasks, lastEditedTask = null) }
     }
 
     fun upsertTask(task: Task) {
@@ -49,7 +48,6 @@ class TasksViewModel(initialState: TasksState, private val sources: List<TasksDa
             val task = tasks.findTask(id) ?: return@setState this
             if (task.complete == complete) return@setState this
             copy(tasks = tasks.copy(tasks.indexOf(task), task.copy(complete = complete)), lastEditedTask = id)
-
         }
         sources.forEach { it.setComplete(id, complete) }
     }
@@ -64,9 +62,10 @@ class TasksViewModel(initialState: TasksState, private val sources: List<TasksDa
         sources.forEach { it.deleteTask(id) }
     }
 
-    companion object : MvRxViewModelFactory<TasksState> {
-        @JvmStatic override fun create(activity: FragmentActivity, state: TasksState): BaseMvRxViewModel<TasksState> {
-            val database = ToDoDatabase.getInstance(activity)
+    companion object : MvRxViewModelFactory<TasksViewModel, TasksState> {
+
+        override fun create(viewModelContext: ViewModelContext, state: TasksState): TasksViewModel {
+            val database = ToDoDatabase.getInstance(viewModelContext.activity)
             // Simulate data sources of different speeds.
             // The slower one can be thought of as the network data source.
             val dataSource1 = DatabaseDataSource(database.taskDao(), 2000)
@@ -75,4 +74,3 @@ class TasksViewModel(initialState: TasksState, private val sources: List<TasksDa
         }
     }
 }
-

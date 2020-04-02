@@ -1,6 +1,7 @@
 package com.airbnb.mvrx
 
-import android.arch.lifecycle.Lifecycle
+import androidx.lifecycle.Lifecycle
+import io.reactivex.Completable
 import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Single
@@ -12,13 +13,16 @@ import org.junit.Before
 import org.junit.Test
 
 data class ViewModelTestState(
-        val foo: Int = 0,
-        val bar: Int = 0,
-        val bam: Int = 0,
-        val list: List<Int> = emptyList(),
-        val async: Async<String> = Uninitialized,
-        val prop6: Int = 0,
-        val prop7: Int = 0
+    val foo: Int = 0,
+    val bar: Int = 0,
+    val bam: Int = 0,
+    val list: List<Int> = emptyList(),
+        // for Single and Observable tests
+    val async: Async<String> = Uninitialized,
+        // for Completable tests
+    val asyncUnit: Async<Unit> = Uninitialized,
+    val prop6: Int = 0,
+    val prop7: Int = 0
 ) : MvRxState
 
 class ViewModelTestViewModel(initialState: ViewModelTestState) : TestMvRxViewModel<ViewModelTestState>(initialState) {
@@ -58,6 +62,41 @@ class ViewModelTestViewModel(initialState: ViewModelTestState) : TestMvRxViewMod
 
     fun triggerCleared() {
         onCleared()
+    }
+
+    fun testCompletableSuccess() {
+        var callCount = 0
+        selectSubscribe(ViewModelTestState::asyncUnit) {
+            callCount++
+            assertEquals(when (callCount) {
+                1 -> Uninitialized
+                2 -> Loading()
+                3 -> Success(Unit)
+                else -> throw IllegalArgumentException("Unexpected call count $callCount")
+            }, it)
+        }
+        Completable.create { emitter ->
+            emitter.onComplete()
+        }.execute { copy(asyncUnit = it) }
+        assertEquals(3, callCount)
+    }
+
+    fun testCompletableFail() {
+        var callCount = 0
+        val error = IllegalStateException("Fail")
+        selectSubscribe(ViewModelTestState::asyncUnit) {
+            callCount++
+            assertEquals(when (callCount) {
+                1 -> Uninitialized
+                2 -> Loading()
+                3 -> Fail<Unit>(error)
+                else -> throw IllegalArgumentException("Unexpected call count $callCount")
+            }, it)
+        }
+        Completable.create {
+            throw error
+        }.execute { copy(asyncUnit = it) }
+        assertEquals(3, callCount)
     }
 
     fun testSingleSuccess() {
@@ -117,15 +156,15 @@ class ViewModelTestViewModel(initialState: ViewModelTestState) : TestMvRxViewMod
                 callCount++
                 assertEquals(when (callCount) {
                     1 -> 0
-                    2 -> 2
+                    2 -> 1
+                    3 -> 2
                     else -> throw IllegalArgumentException("Unexpected call count $callCount")
                 }, it)
             }
-            // These will be coalesced into one update
             setState { copy(foo = 1) }
             setState { copy(foo = 2) }
         }
-        assertEquals(2, callCount)
+        assertEquals(3, callCount)
     }
 
     fun testObservableFail() {
@@ -159,7 +198,6 @@ class ViewModelTestViewModel(initialState: ViewModelTestState) : TestMvRxViewMod
         }
         Observable.just("Hello World").execute(mapper = { "$it!" }) { copy(async = it) }
         assertEquals(3, callCount)
-
     }
 }
 
@@ -172,7 +210,7 @@ class ViewModelSubscriberTest : BaseTest() {
     fun setup() {
         viewModel = ViewModelTestViewModel(ViewModelTestState())
         owner = TestLifecycleOwner()
-        owner.lifecycle.markState(Lifecycle.State.RESUMED)
+        owner.lifecycle.currentState = Lifecycle.State.RESUMED
     }
 
     @Test
@@ -250,7 +288,6 @@ class ViewModelSubscriberTest : BaseTest() {
         viewModel.set { copy(list = listOf(1, 2, 3)) }
         assertEquals(5, callCount)
     }
-
 
     @Test
     fun testSelectSubscribe5External() {
@@ -409,6 +446,16 @@ class ViewModelSubscriberTest : BaseTest() {
     }
 
     @Test
+    fun testCompletableSuccess() {
+        viewModel.testCompletableSuccess()
+    }
+
+    @Test
+    fun testCompletableFail() {
+        viewModel.testCompletableFail()
+    }
+
+    @Test
     fun testSingleSuccess() {
         viewModel.testSingleSuccess()
     }
@@ -440,7 +487,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeNotCalledInInitialized() {
-        owner.lifecycle.markState(Lifecycle.State.INITIALIZED)
+        owner.lifecycle.currentState = Lifecycle.State.INITIALIZED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -452,7 +499,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeNotCalledInCreated() {
-        owner.lifecycle.markState(Lifecycle.State.CREATED)
+        owner.lifecycle.currentState = Lifecycle.State.CREATED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -464,7 +511,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeCalledInStarted() {
-        owner.lifecycle.markState(Lifecycle.State.STARTED)
+        owner.lifecycle.currentState = Lifecycle.State.STARTED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -476,7 +523,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeCalledInResumed() {
-        owner.lifecycle.markState(Lifecycle.State.RESUMED)
+        owner.lifecycle.currentState = Lifecycle.State.RESUMED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -488,7 +535,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeNotCalledInDestroyed() {
-        owner.lifecycle.markState(Lifecycle.State.DESTROYED)
+        owner.lifecycle.currentState = Lifecycle.State.DESTROYED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -500,7 +547,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeNotCalledWhenTransitionedToStopped() {
-        owner.lifecycle.markState(Lifecycle.State.RESUMED)
+        owner.lifecycle.currentState = Lifecycle.State.RESUMED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -518,7 +565,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeNotCalledWhenTransitionedToDestroyed() {
-        owner.lifecycle.markState(Lifecycle.State.RESUMED)
+        owner.lifecycle.currentState = Lifecycle.State.RESUMED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -536,7 +583,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeCalledWhenTransitionToStarted() {
-        owner.lifecycle.markState(Lifecycle.State.CREATED)
+        owner.lifecycle.currentState = Lifecycle.State.CREATED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -550,7 +597,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeCalledWhenTransitionToResumed() {
-        owner.lifecycle.markState(Lifecycle.State.STARTED)
+        owner.lifecycle.currentState = Lifecycle.State.STARTED
 
         var callCount = 0
         viewModel.subscribe(owner) {
@@ -568,7 +615,7 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeCalledOnRestart() {
-        owner.lifecycle.markState(Lifecycle.State.RESUMED)
+        owner.lifecycle.currentState = Lifecycle.State.RESUMED
         var callCount = 0
         viewModel.subscribe(owner) {
             callCount++
@@ -584,10 +631,10 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testUniqueOnlySubscribeCalledOnStartIfUpdateOccurredInStop() {
-        owner.lifecycle.markState(Lifecycle.State.STARTED)
+        owner.lifecycle.currentState = Lifecycle.State.STARTED
 
         var callCount = 0
-        viewModel.subscribe(owner, uniqueOnly = true) {
+        viewModel.subscribe(owner, deliveryMode = UniqueOnly("id")) {
             callCount++
         }
 
@@ -602,10 +649,10 @@ class ViewModelSubscriberTest : BaseTest() {
 
     @Test
     fun testSubscribeNotCalledOnStartIfNoUpdateOccurredInStop() {
-        owner.lifecycle.markState(Lifecycle.State.STARTED)
+        owner.lifecycle.currentState = Lifecycle.State.STARTED
 
         var callCount = 0
-        viewModel.subscribe(owner, uniqueOnly = true) {
+        viewModel.subscribe(owner, deliveryMode = UniqueOnly("id")) {
             callCount++
         }
 
@@ -686,6 +733,5 @@ class ViewModelSubscriberTest : BaseTest() {
 
         viewModel.set { copy() }
         assertEquals(1, callCount)
-
     }
 }

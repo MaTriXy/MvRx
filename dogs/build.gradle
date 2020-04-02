@@ -1,0 +1,47 @@
+apply plugin: "com.android.application"
+apply plugin: "kotlin-android"
+apply plugin: "kotlin-kapt"
+apply plugin: "kotlin-android-extensions"
+
+android {
+    compileSdkVersion versions.compileSdk
+    buildToolsVersion versions.buildTools
+
+    defaultConfig {
+        applicationId "com.airbnb.mvrx.dogs"
+        minSdkVersion versions.minSdk
+        targetSdkVersion versions.targetSdk
+        versionCode 1
+        versionName "1.0"
+    }
+
+    dataBinding {
+        enabled = true
+    }
+
+    compileOptions {
+        sourceCompatibility = 1.8
+        targetCompatibility = 1.8
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8.toString()
+    }
+}
+
+dependencies {
+    implementation libraries.appcompat
+    implementation libraries.cardview
+    implementation libraries.constraintlayout
+    implementation libraries.coreKtx
+    implementation (libraries.epoxy) { exclude group: "com.android.support" }
+    implementation libraries.kotlin
+    implementation libraries.lottie
+    implementation libraries.navigationFragmentKtx
+    implementation libraries.navigationUiKtx
+    implementation libraries.picasso
+    implementation project(":mvrx")
+
+    testImplementation testLibraries.junit
+    testImplementation project(":testing")
+}

@@ -1,7 +1,7 @@
 package com.airbnb.mvrx.sample.features.dadjoke
 
 import android.os.Bundle
-import android.support.design.widget.Snackbar
+import com.google.android.material.snackbar.Snackbar
 import android.util.Log
 import android.view.View
 import com.airbnb.mvrx.fragmentViewModel
@@ -24,6 +24,7 @@ class DadJokeIndexFragment : BaseFragment() {
     private val viewModel: DadJokeIndexViewModel by fragmentViewModel()
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
         /**
          * Use viewModel.subscribe to listen for changes. The parameter is a shouldUpdate
          * function that is given the old state and new state and returns whether or not to

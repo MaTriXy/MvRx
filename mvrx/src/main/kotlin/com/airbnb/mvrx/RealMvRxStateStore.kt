@@ -5,7 +5,7 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.BehaviorSubject
-import java.util.*
+import java.util.LinkedList
 
 /**
  * This is a container class around the actual state itself. It has a few optimizations to ensure
@@ -78,6 +78,66 @@ class RealMvRxStateStore<S : Any>(initialState: S) : MvRxStateStore<S> {
         flushQueueSubject.onNext(Unit)
     }
 
+    /**
+     * Job scheduling algorithm
+     * We use double-queue design to prioritize `setState` blocks over `getState` blocks.
+     * `setStateQueue` has higher priority and needs to be flushed before taking tasks from `getStateQueue`.
+     * If a `getState` block enqueues a `setState` block, it should be executed before executing the next `getState` block.
+     * This is to prevent a race condition when `getState` itself enqueues a `setState`, for example:
+     * ```
+     * getState { state ->
+     *   if (state.isLoading) return
+     *   setState { state ->
+     *     state.copy(isLoading = true)
+     *   }
+     *   // make a network call
+     * }
+     * ```
+     * In the above example, we have to run the inner `setState` before the next `getState`.
+     * Otherwise if we call this code twice consecutively, we could end up with making network call twice.
+     *
+     * Let's simplify the scenario as following:
+     * ```
+     * getStateA {
+     *   setStateA {}
+     * }
+     * getStateB {
+     *   setStateB {}
+     * }
+     * ```
+     * With a single queue design, the execution order is the same as enqueuing order.
+     * i.e. `getStateA -> getStateB -> setStateA -> setStateB`
+     *
+     * With our double queue design, what is happening is:
+     *
+     * 1) after both `getState`s are enqueued
+     *   - setStateQueue: []
+     *   - getStateQueue: [A, B]
+     *
+     * 2) after first `getState` is executed
+     *   - setStateQueue: [A]
+     *   - getStateQueue: [B]
+     * 3) since reducer has higher priority, we execute it
+     *   - setStateQueue: []
+     *   - getStateQueue: [B]
+     * 4) setStateB is executed
+     *  - setStateQueue: []
+     *  - getStateQueue: []
+     *
+     * The execution order is `getStateA->setStateA->getStateB ->setStateB`
+     *
+     * Note that the race condition can also be solved by not introducing the `getState` API, as following:
+     * ```
+     * setState { state -> // `setState` is simply a more "powerful" version of `getState`
+     *   if (state.isLoading) return
+     *   state.copy(isLoading = true)
+     *   // make a network call
+     * }
+     * ```
+     * The above code will run without race condition using single queue design.
+     * However, we think it's valuable to have a separate `getState` API,
+     * as it has a different semantic meaning and improves readability.
+     */
     private class Jobs<S> {
 
         private val getStateQueue = LinkedList<(state: S) -> Unit>()
@@ -95,9 +155,7 @@ class RealMvRxStateStore<S : Any>(initialState: S) : MvRxStateStore<S> {
 
         @Synchronized
         fun dequeueGetStateBlock(): ((state: S) -> Unit)? {
-            if (getStateQueue.isEmpty()) return null
-
-            return getStateQueue.removeFirst()
+            return getStateQueue.poll()
         }
 
         @Synchronized
@@ -114,27 +172,27 @@ class RealMvRxStateStore<S : Any>(initialState: S) : MvRxStateStore<S> {
     /**
      * Flushes the setState and getState queues.
      *
-     * This will flush he setState queue then call the first element on the getState queue.
+     * This will flush the setState queue then call the first element on the getState queue.
      *
      * In case the setState queue calls setState, we call flushQueues recursively to flush the setState queue
      * in between every getState block gets processed.
      */
-    private fun flushQueues() {
+    private tailrec fun flushQueues() {
         flushSetStateQueue()
         val block = jobs.dequeueGetStateBlock() ?: return
         block(state)
         flushQueues()
     }
 
-    /**
-     * Coalesce all updates on the setState queue and clear the queue.
-     */
     private fun flushSetStateQueue() {
         val blocks = jobs.dequeueAllSetStateBlocks() ?: return
-
-        blocks
-                .fold(state) { state, reducer -> state.reducer() }
-                .run { if (this != state) subject.onNext(this) }
+        for (block in blocks) {
+            val newState = state.block()
+            // do not coalesce state change. it's more expected to notify for every state change.
+            if (newState != state) {
+                subject.onNext(newState)
+            }
+        }
     }
 
     private fun handleError(throwable: Throwable) {

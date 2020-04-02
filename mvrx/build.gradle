@@ -1,34 +1,37 @@
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
-apply plugin: 'kotlin-android-extensions'
-apply plugin: 'kotlin-kapt'
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+apply plugin: "kotlin-android-extensions"
+apply plugin: "kotlin-kapt"
 apply plugin: "jacoco"
-
-apply from: '../gradle-maven-push.gradle'
+apply plugin: "com.vanniktech.maven.publish"
 
 android {
-    compileSdkVersion 28
-    resourcePrefix 'mvrx_'
+    compileSdkVersion versions.compileSdk
+    buildToolsVersion versions.buildTools
+    resourcePrefix "mvrx_"
 
     defaultConfig {
-        minSdkVersion 16
-        targetSdkVersion 28
-        consumerProguardFiles 'proguard-rules.pro'
+        minSdkVersion versions.minSdk
+        targetSdkVersion versions.targetSdk
+        consumerProguardFiles "proguard-rules.pro"
     }
-    buildToolsVersion "$buildToolsVersion"
+
     lintOptions {
         abortOnError true
         textReport true
-        textOutput 'stdout'
+        textOutput "stdout"
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+
     sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
-        test.java.srcDirs += 'src/test/kotlin'
+        main.java.srcDirs += "src/main/kotlin"
+        test.java.srcDirs += "src/test/kotlin"
     }
+
     testOptions {
         unitTests {
             includeAndroidResources = true
@@ -50,45 +53,18 @@ jacoco {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion"
-    implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
-    implementation "com.android.support:appcompat-v7:$supportLibVersion"
-    implementation "android.arch.lifecycle:extensions:$lifecycleVersion"
-    kapt "android.arch.lifecycle:compiler:$lifecycleVersion"
-    implementation 'io.reactivex.rxjava2:rxandroid:2.0.2'
-    api "io.reactivex.rxjava2:rxjava:2.2.0"
+    kapt annotationProcessors.lifecycle
 
-    testImplementation "org.mockito:mockito-core:2.15.0"
-    testImplementation 'junit:junit:4.12'
-    testImplementation "org.robolectric:robolectric:$robolectricVersion"
-    testImplementation "org.robolectric:shadows-supportv4:$robolectricVersion"
-}
+    api libraries.rxAndroid
+    api libraries.rxJava
 
-// Ensure custom source sets are included:
-// https://www.virag.si/2015/01/publishing-gradle-android-library-to-jcenter/
-task sourcesJar(type: Jar) {
-    from android.sourceSets.main.java.srcDirs
-    classifier = 'sources'
-}
+    implementation libraries.appcompat
+    implementation libraries.kotlin
+    implementation libraries.lifecycleExtensions
 
-task javadoc(type: Javadoc) {
-    source = android.sourceSets.main.java.srcDirs
-    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
-}
-
-task javadocJar(type: Jar, dependsOn: javadoc) {
-    classifier = 'javadoc'
-    from javadoc.destinationDir
-}
-
-artifacts {
-    archives javadocJar
-    archives sourcesJar
-}
-
-tasks.withType(Javadoc).all {
-    enabled = false
+    testImplementation testLibraries.junit
+    testImplementation testLibraries.mockito
+    testImplementation testLibraries.roboeletric
 }
 
 task coverage(type: JacocoReport, dependsOn: "testDebugUnitTest") {
@@ -108,11 +84,11 @@ task coverage(type: JacocoReport, dependsOn: "testDebugUnitTest") {
     ]
     def debugTree = fileTree(dir: "${buildDir}/intermediates/classes/debug", excludes: excludes)
     def kotlinDebugTree = fileTree(dir: "${buildDir}/tmp/kotlin-classes/debug", excludes: excludes)
-    classDirectories = files([debugTree], [kotlinDebugTree])
+    classDirectories.from([debugTree], [kotlinDebugTree])
 
-    sourceDirectories = files([
+    sourceDirectories.from([
             android.sourceSets.main.java.srcDirs,
             "${project.projectDir}/src/main/kotlin"
     ])
-    executionData = files("$buildDir/jacoco/testDebugUnitTest.exec")
+    executionData.from("$buildDir/jacoco/testDebugUnitTest.exec")
 }

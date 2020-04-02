@@ -1,1 +1,10 @@
-include ':mvrx', ':sample', ':todomvrx', ':testing'
+// Libraries
+include ":mvrx"
+include ":testing"
+
+// Samples
+include ":counter"
+include ":dogs"
+include ":hellodagger"
+include ":sample"
+include ":todomvrx"
