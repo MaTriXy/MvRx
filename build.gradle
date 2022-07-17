@@ -1,21 +1,20 @@
-buildscript {
-    apply from: rootProject.file("dependencies.gradle")
+import com.airbnb.mvrx.AndroidMetaModulePlugin
 
+buildscript {
     repositories {
         google()
-        jcenter()
-        maven { url "https://oss.sonatype.org/service/local/repositories/snapshots/content/" }
+        mavenCentral()
     }
     dependencies {
-        classpath "com.android.tools.build:gradle:${versions.gradlePlugin}"
-        classpath "org.jetbrains.kotlin:kotlin-android-extensions:${versions.kotlin}"
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${versions.kotlin}"
+        classpath "com.android.tools.build:gradle:${Versions.gradlePlugin}"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${Versions.kotlin}"
+        classpath "com.google.dagger:hilt-android-gradle-plugin:${Versions.hilt}"
 
         // Upload with:
-        // ./gradlew clean assemble androidSourcesJar androidJavadocsJar uploadArchives --no-daemon --no-parallel
-        // Need to use snapshot version and explicitly include javadoc/sources tasks until
-        // https://github.com/vanniktech/gradle-maven-publish-plugin/issues/54 is fixed
-        classpath "com.vanniktech:gradle-maven-publish-plugin:0.9.0-SNAPSHOT"
+        // ./gradlew clean assemble uploadArchives --no-daemon --no-parallel
+        classpath "com.vanniktech:gradle-maven-publish-plugin:0.14.2"
+        // Dokka is needed on classpath for vanniktech publish plugin
+        classpath "org.jetbrains.dokka:dokka-gradle-plugin:1.5.31"
     }
 
     configurations.all {
@@ -26,13 +25,26 @@ buildscript {
     }
 }
 
+plugins {
+    id("io.gitlab.arturbosch.detekt").version("1.18.1")
+}
+
+apply plugin: 'io.gitlab.arturbosch.detekt'
+
+plugins.apply(AndroidMetaModulePlugin.class)
+
 allprojects {
     version = VERSION_NAME
     group = GROUP
 
     repositories {
         google()
-        jcenter()
-        maven { url "https://jitpack.io" }
+        mavenCentral()
     }
 }
+
+subprojects {
+    apply from: "$rootDir/detekt.gradle"
+}
+
+apply from: 'gradle/jacoco.gradle'

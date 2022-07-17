@@ -1,35 +1,24 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 apply plugin: "com.android.library"
 apply plugin: "kotlin-android"
-apply plugin: "kotlin-android-extensions"
-apply plugin: "kotlin-kapt"
-apply plugin: "jacoco"
+apply plugin: "kotlin-parcelize"
 apply plugin: "com.vanniktech.maven.publish"
 
+tasks.withType(KotlinCompile).all {
+    kotlinOptions {
+        freeCompilerArgs += [
+                '-Xopt-in=kotlin.RequiresOptIn',
+                '-Xopt-in=com.airbnb.mvrx.InternalMavericksApi',
+        ]
+    }
+}
+
 android {
-    compileSdkVersion versions.compileSdk
-    buildToolsVersion versions.buildTools
     resourcePrefix "mvrx_"
 
     defaultConfig {
-        minSdkVersion versions.minSdk
-        targetSdkVersion versions.targetSdk
         consumerProguardFiles "proguard-rules.pro"
-    }
-
-    lintOptions {
-        abortOnError true
-        textReport true
-        textOutput "stdout"
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    sourceSets {
-        main.java.srcDirs += "src/main/kotlin"
-        test.java.srcDirs += "src/test/kotlin"
     }
 
     testOptions {
@@ -38,57 +27,27 @@ android {
             all {
                 jacoco {
                     includeNoLocationClasses = true
+                    jacoco.excludes = ['jdk.internal.*']
                 }
             }
         }
     }
 }
 
-androidExtensions {
-    experimental = true
-}
-
-jacoco {
-    toolVersion = "0.8.2"
-}
-
 dependencies {
-    kapt annotationProcessors.lifecycle
+    api Libraries.kotlinCoroutines
+    api Libraries.activity
 
-    api libraries.rxAndroid
-    api libraries.rxJava
+    implementation Libraries.activity
+    implementation Libraries.appcompat
+    implementation Libraries.fragment
+    implementation Libraries.viewModelSavedState
+    implementation Libraries.lifecycleCommon
+    implementation Libraries.viewModelKtx
+    implementation Libraries.runtimeKtx
 
-    implementation libraries.appcompat
-    implementation libraries.kotlin
-    implementation libraries.lifecycleExtensions
-
-    testImplementation testLibraries.junit
-    testImplementation testLibraries.mockito
-    testImplementation testLibraries.roboeletric
-}
-
-task coverage(type: JacocoReport, dependsOn: "testDebugUnitTest") {
-    group = "Reporting"
-    description = "Generate Jacoco coverage reports for Debug build"
-
-    reports {
-        xml.enabled = true
-        html.enabled = true
-    }
-
-    def excludes = [
-            '**/R.class',
-            '**/R$*.class',
-            '**/BuildConfig.*',
-            '**/Manifest*.*',
-    ]
-    def debugTree = fileTree(dir: "${buildDir}/intermediates/classes/debug", excludes: excludes)
-    def kotlinDebugTree = fileTree(dir: "${buildDir}/tmp/kotlin-classes/debug", excludes: excludes)
-    classDirectories.from([debugTree], [kotlinDebugTree])
-
-    sourceDirectories.from([
-            android.sourceSets.main.java.srcDirs,
-            "${project.projectDir}/src/main/kotlin"
-    ])
-    executionData.from("$buildDir/jacoco/testDebugUnitTest.exec")
+    testImplementation TestLibraries.junit
+    testImplementation TestLibraries.kotlinCoroutinesTest
+    testImplementation TestLibraries.mockito
+    testImplementation TestLibraries.roboeletric
 }

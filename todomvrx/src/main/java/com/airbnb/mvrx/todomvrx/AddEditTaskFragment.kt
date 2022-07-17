@@ -22,7 +22,7 @@ import android.os.Parcelable
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.navigation.fragment.findNavController
-import com.airbnb.mvrx.MvRxState
+import com.airbnb.mvrx.MavericksState
 import com.airbnb.mvrx.args
 import com.airbnb.mvrx.fragmentViewModel
 import com.airbnb.mvrx.todomvrx.core.BaseFragment
@@ -34,13 +34,13 @@ import com.airbnb.mvrx.todomvrx.util.simpleController
 import com.airbnb.mvrx.todomvrx.views.addEditView
 import com.airbnb.mvrx.withState
 import com.google.android.material.snackbar.Snackbar
-import kotlinx.android.parcel.Parcelize
+import kotlinx.parcelize.Parcelize
 
 @SuppressLint("ParcelCreator")
 @Parcelize
 data class AddEditTaskArgs(val id: String? = null) : Parcelable
 
-data class EditTaskState(val newTitle: String? = null, val newDescription: String? = null) : MvRxState
+data class EditTaskState(val newTitle: String? = null, val newDescription: String? = null) : MavericksState
 class EditTaskViewModel(initialState: EditTaskState) : MvRxViewModel<EditTaskState>(initialState) {
     fun setTitle(title: String) {
         setState { copy(newTitle = title) }

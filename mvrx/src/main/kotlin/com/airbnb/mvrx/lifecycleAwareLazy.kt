@@ -2,11 +2,11 @@
 
 package com.airbnb.mvrx
 
-import androidx.annotation.RestrictTo
+import android.os.Handler
+import android.os.Looper
+import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleObserver
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.OnLifecycleEvent
 import java.io.Serializable
 
 private object UninitializedValue
@@ -14,24 +14,50 @@ private object UninitializedValue
 /**
  * This was copied from SynchronizedLazyImpl but modified to automatically initialize in ON_CREATE.
  */
-@RestrictTo(RestrictTo.Scope.LIBRARY)
+@InternalMavericksApi
 @SuppressWarnings("Detekt.ClassNaming")
-class lifecycleAwareLazy<out T>(private val owner: LifecycleOwner, initializer: () -> T) : Lazy<T>, Serializable {
+class lifecycleAwareLazy<out T>(
+    private val owner: LifecycleOwner,
+    isMainThread: () -> Boolean = { Looper.myLooper() == Looper.getMainLooper() },
+    initializer: () -> T
+) :
+    Lazy<T>,
+    Serializable {
     private var initializer: (() -> T)? = initializer
+
     @Volatile
     @SuppressWarnings("Detekt.VariableNaming")
     private var _value: Any? = UninitializedValue
+
     // final field is required to enable safe publication of constructed instance
     private val lock = this
 
     init {
-        owner.lifecycle.addObserver(object : LifecycleObserver {
-            @OnLifecycleEvent(Lifecycle.Event.ON_CREATE)
-            fun onStart() {
-                if (!isInitialized()) value
-                owner.lifecycle.removeObserver(this)
+        if (isMainThread()) {
+            initializeWhenCreated(owner)
+        } else {
+            Handler(Looper.getMainLooper()).post {
+                initializeWhenCreated(owner)
             }
-        })
+        }
+    }
+
+    private fun initializeWhenCreated(owner: LifecycleOwner) {
+        val lifecycleState = owner.lifecycle.currentState
+        when {
+            lifecycleState == Lifecycle.State.DESTROYED || isInitialized() -> return
+            lifecycleState == Lifecycle.State.INITIALIZED -> {
+                owner.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                    override fun onCreate(owner: LifecycleOwner) {
+                        if (!isInitialized()) value
+                        owner.lifecycle.removeObserver(this)
+                    }
+                })
+            }
+            else -> {
+                if (!isInitialized()) value
+            }
+        }
     }
 
     @Suppress("LocalVariableName")

@@ -3,7 +3,7 @@ package com.airbnb.mvrx
 import android.content.Context
 import android.os.Bundle
 import android.os.Parcelable
-import kotlinx.android.parcel.Parcelize
+import kotlinx.parcelize.Parcelize
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -25,60 +25,71 @@ class PersistedStateTest : BaseTest() {
 
     @Test
     fun saveDefaultInt() {
-        data class State(@PersistState val count: Int = 5) : MvRxState
+        data class State(@PersistState val count: Int = 5) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State())
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State())
+        val newState = restorePersistedMavericksState(bundle, State())
+        assertEquals(5, newState.count)
+    }
+
+    data class StateWithInternalVal(@PersistState internal val count: Int = 5) : MavericksState
+
+    @Test
+    fun saveInternalInt() {
+        // internal properties in data classes have different method names generated for them,
+        // and our custom copy function needs to handle that.
+        val bundle = persistMavericksState(StateWithInternalVal())
+        val newState = restorePersistedMavericksState(bundle, StateWithInternalVal())
         assertEquals(5, newState.count)
     }
 
     @Test(expected = IllegalStateException::class)
     fun validatesMissingKeyInBundle() {
-        data class State(@PersistState val count: Int = 5) : MvRxState
+        data class State(@PersistState val count: Int = 5) : MavericksState
 
-        val newState = PersistStateTestHelpers.restorePersistedState(Bundle(), State(), validation = true)
+        val newState = restorePersistedMavericksState(Bundle(), State(), validation = true)
         assertEquals(5, newState.count)
     }
 
     @Test
     fun savePrivateDefaultInt() {
-        data class State(@PersistState private val count: Int = 5) : MvRxState {
+        data class State(@PersistState private val count: Int = 5) : MavericksState {
             fun exposeCount() = count
         }
 
-        val bundle = PersistStateTestHelpers.persistState(State())
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State())
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(5, newState.exposeCount())
     }
 
     @Test
     fun saveSetInt() {
-        data class State(@PersistState val count: Int = 0) : MvRxState
+        data class State(@PersistState val count: Int = 0) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State(count = 7))
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State(count = 7))
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(7, newState.count)
     }
 
     @Test
     fun saveSetIntWithSecondaryConstructor() {
-        data class State(@PersistState val count: Int = 0) : MvRxState {
+        data class State(@PersistState val count: Int = 0) : MavericksState {
             constructor(args: String) : this(args.toInt())
         }
 
-        val bundle = PersistStateTestHelpers.persistState(State(count = 7))
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State(count = 7))
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(7, newState.count)
     }
 
     @Test
     fun saveSetIntWithTwoPropertiesAndDerivedProp() {
-        data class State(@PersistState val count: Int = 0, val name: String = "") : MvRxState {
+        data class State(@PersistState val count: Int = 0, val name: String = "") : MavericksState {
             val isEven = count % 2 == 0
         }
 
-        val bundle = PersistStateTestHelpers.persistState(State(count = 7, name = "Gabriel"))
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State(count = 7, name = "Gabriel"))
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(7, newState.count)
     }
 
@@ -90,10 +101,10 @@ class PersistedStateTest : BaseTest() {
             @PersistState val doubleVal: Double = 0.0,
             @PersistState val floatVal: Float = 0f,
             @PersistState val charVal: Char = 'A'
-        ) : MvRxState
+        ) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State(intVal = 1, longVal = 2, doubleVal = 3.0, floatVal = 4f, charVal = 'B'))
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State(intVal = 1, longVal = 2, doubleVal = 3.0, floatVal = 4f, charVal = 'B'))
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(1, newState.intVal)
         assertEquals(2L, newState.longVal)
         assertEquals(3.0, newState.doubleVal, Double.MIN_VALUE)
@@ -103,121 +114,125 @@ class PersistedStateTest : BaseTest() {
 
     @Test
     fun savePersistNothing() {
-        data class State(val count1: Int = 0, val count2: Int = 0) : MvRxState
+        data class State(val count1: Int = 0, val count2: Int = 0) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State(count1 = 7, count2 = 9))
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State(count1 = 7, count2 = 9))
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(0, newState.count1)
         assertEquals(0, newState.count2)
     }
 
     @Test
     fun savePersistParcelable() {
-        data class State(val data: ParcelableClass = ParcelableClass()) : MvRxState
+        data class State(val data: ParcelableClass = ParcelableClass()) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State())
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State())
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(0, newState.data.count)
     }
 
     @Test
     fun savePersistParcelableWithValue() {
-        data class State(@PersistState val data: ParcelableClass = ParcelableClass()) : MvRxState
+        data class State(@PersistState val data: ParcelableClass = ParcelableClass()) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State(data = ParcelableClass(count = 5)))
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State(data = ParcelableClass(count = 5)))
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(5, newState.data.count)
     }
 
     @Test
     fun ignoreNestedPersistState() {
-        data class State(@PersistState val data: ParcelableClassWithPersistState = ParcelableClassWithPersistState()) : MvRxState
+        data class State(@PersistState val data: ParcelableClassWithPersistState = ParcelableClassWithPersistState()) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State())
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State())
+        val newState = restorePersistedMavericksState(bundle, State())
         assertEquals(0, newState.data.count)
     }
 
     @Test
     fun testNullableEnum() {
-        data class State(@PersistState val data: MyEnum? = MyEnum.A) : MvRxState
+        data class State(@PersistState val data: MyEnum? = MyEnum.A) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State(data = null))
-        val state = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State(data = null))
+        val state = restorePersistedMavericksState(bundle, State())
         assertNull(state.data)
     }
 
     @Test
     fun testNullableEnumReversed() {
-        data class State(@PersistState val data: MyEnum? = null) : MvRxState
+        data class State(@PersistState val data: MyEnum? = null) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State(data = MyEnum.A))
-        val state = PersistStateTestHelpers.restorePersistedState(bundle, State())
+        val bundle = persistMavericksState(State(data = MyEnum.A))
+        val state = restorePersistedMavericksState(bundle, State())
         assertEquals(MyEnum.A, state.data)
     }
 
     @Test
     fun testParcelableList() {
-        data class State2(@PersistState val data: List<ParcelableClass> = listOf(ParcelableClass(count = 2))) : MvRxState
+        data class State2(@PersistState val data: List<ParcelableClass> = listOf(ParcelableClass(count = 2))) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State2())
-        val state = PersistStateTestHelpers.restorePersistedState(bundle, State2())
+        val bundle = persistMavericksState(State2())
+        val state = restorePersistedMavericksState(bundle, State2())
         assertEquals(2, state.data[0].count)
     }
 
     @Test
     fun testParcelableListWithChangedValue() {
-        data class State2(@PersistState val data: List<ParcelableClass> = listOf(ParcelableClass(count = 2))) : MvRxState
+        data class State2(@PersistState val data: List<ParcelableClass> = listOf(ParcelableClass(count = 2))) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State2(listOf(ParcelableClass(3))))
-        val state = PersistStateTestHelpers.restorePersistedState(bundle, State2())
+        val bundle = persistMavericksState(State2(listOf(ParcelableClass(3))))
+        val state = restorePersistedMavericksState(bundle, State2())
         assertEquals(3, state.data[0].count)
     }
 
     @Test(expected = IllegalStateException::class)
     fun testNonParcelableList() {
-        data class State2(@PersistState val data: List<Context> = listOf(Mockito.mock(Context::class.java))) : MvRxState
+        data class State2(@PersistState val data: List<Context> = listOf(Mockito.mock(Context::class.java))) : MavericksState
 
-        PersistStateTestHelpers.persistState(State2())
+        persistMavericksState(State2(), validation = true)
     }
 
     @Test
     fun testParcelableSetWithChangedValue() {
-        data class State2(@PersistState val data: Set<ParcelableClass> = setOf(ParcelableClass(count = 2))) : MvRxState
+        data class State2(@PersistState val data: Set<ParcelableClass> = setOf(ParcelableClass(count = 2))) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State2(setOf(ParcelableClass(3))))
-        val state = PersistStateTestHelpers.restorePersistedState(bundle, State2())
+        val bundle = persistMavericksState(State2(setOf(ParcelableClass(3))))
+        val state = restorePersistedMavericksState(bundle, State2())
         assertEquals(3, state.data.take(1).first().count)
     }
 
     @Test(expected = IllegalStateException::class)
     fun testNonParcelableSet() {
-        data class State2(@PersistState val data: Set<Context> = setOf(Mockito.mock(Context::class.java))) : MvRxState
+        data class State2(@PersistState val data: Set<Context> = setOf(Mockito.mock(Context::class.java))) : MavericksState
 
-        PersistStateTestHelpers.persistState(State2())
+        persistMavericksState(State2(), validation = true)
     }
 
     @Test
     fun testParcelableMapWithChangedValue() {
-        data class State2(@PersistState val data: Map<String, ParcelableClass> = mapOf("foo" to ParcelableClass(count = 2))) : MvRxState
+        data class State2(
+            @PersistState val data: Map<String, ParcelableClass> = mapOf("foo" to ParcelableClass(count = 2))
+        ) : MavericksState
 
-        val bundle = PersistStateTestHelpers.persistState(State2(mapOf("foo" to ParcelableClass(3))))
-        val state = PersistStateTestHelpers.restorePersistedState(bundle, State2())
+        val bundle = persistMavericksState(State2(mapOf("foo" to ParcelableClass(3))))
+        val state = restorePersistedMavericksState(bundle, State2())
         assertEquals(3, state.data["foo"]?.count)
     }
 
     @Test(expected = IllegalStateException::class)
     fun testNonParcelableMap() {
-        data class State2(@PersistState val data: Map<String, Context> = mapOf("foo" to Mockito.mock(Context::class.java))) : MvRxState
+        data class State2(
+            @PersistState val data: Map<String, Context> = mapOf("foo" to Mockito.mock(Context::class.java))
+        ) : MavericksState
 
-        PersistStateTestHelpers.persistState(State2())
+        persistMavericksState(State2(), validation = true)
     }
 
     @Test(expected = IllegalStateException::class)
     fun failOnNonParcelable() {
         class NonParcelableClass
-        data class State(@PersistState val data: NonParcelableClass = NonParcelableClass()) : MvRxState
-        PersistStateTestHelpers.persistState(State())
+        data class State(@PersistState val data: NonParcelableClass = NonParcelableClass()) : MavericksState
+        persistMavericksState(State())
     }
 
     @Test
@@ -263,18 +278,21 @@ class PersistedStateTest : BaseTest() {
             @PersistState val p37: Int = 0,
             val p38: Int = 0,
             @PersistState val p39: Int = 0
-        ) : MvRxState
-        val bundle = PersistStateTestHelpers.persistState(StateWithLotsOfParameters(
-            p0 = 1,
-            p1 = 2,
-            p30 = 3,
-            p31 = 4,
-            p32 = 5,
-            p33 = 6,
-            p34 = 7,
-            p35 = 8
-        ))
-        val newState = PersistStateTestHelpers.restorePersistedState(bundle, StateWithLotsOfParameters())
+        ) : MavericksState
+
+        val bundle = persistMavericksState(
+            StateWithLotsOfParameters(
+                p0 = 1,
+                p1 = 2,
+                p30 = 3,
+                p31 = 4,
+                p32 = 5,
+                p33 = 6,
+                p34 = 7,
+                p35 = 8
+            )
+        )
+        val newState = restorePersistedMavericksState(bundle, StateWithLotsOfParameters())
         assertEquals(2, newState.p1)
         assertEquals(4, newState.p31)
         assertEquals(6, newState.p33)

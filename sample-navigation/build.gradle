@@ -1,0 +1,22 @@
+apply plugin: "com.android.application"
+apply plugin: "kotlin-android"
+apply plugin: "jacoco"
+
+android {
+    defaultConfig {
+        applicationId 'com.airbnb.mvrx.sample.navigation'
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+dependencies {
+    implementation Libraries.appcompat
+
+    implementation project(":mvrx-navigation")
+    implementation project(':view-binding-utils')
+}

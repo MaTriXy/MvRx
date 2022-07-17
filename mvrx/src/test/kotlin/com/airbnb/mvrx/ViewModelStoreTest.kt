@@ -3,22 +3,18 @@ package com.airbnb.mvrx
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
-import android.os.Parcelable
-import kotlinx.android.parcel.Parcelize
+import androidx.fragment.app.Fragment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.robolectric.Robolectric
 import org.robolectric.annotation.Config
 
-@Parcelize
-data class ViewModelStoreTestArgs(val count: Int = 2) : Parcelable
-
-data class ViewModelStoreTestState(val notPersistedCount: Int = 1, @PersistState val persistedCount: Int = 1) : MvRxState {
+data class ViewModelStoreTestState(val notPersistedCount: Int = 1, @PersistState val persistedCount: Int = 1) : MavericksState {
     constructor(args: ViewModelStoreTestArgs) : this(args.count, args.count)
 }
 
-class ViewModelStoreTestViewModel(initialState: ViewModelStoreTestState) : TestMvRxViewModel<ViewModelStoreTestState>(initialState) {
+class ViewModelStoreTestViewModel(initialState: ViewModelStoreTestState) : TestMavericksViewModel<ViewModelStoreTestState>(initialState) {
     fun setCount(count: Int) = setState { copy(persistedCount = count, notPersistedCount = count) }
 }
 
@@ -32,11 +28,12 @@ class ViewModelStoreActivity : TestActivity() {
     }
 }
 
-class ViewModelStoreTestFragment : BaseMvRxFragment() {
+@Suppress("DEPRECATION")
+class ViewModelStoreTestFragment : Fragment(), MavericksView {
     val viewModelFragment: ViewModelStoreTestViewModel by fragmentViewModel()
     val viewModelActivity: ViewModelStoreTestViewModel by activityViewModel()
 
-    override fun invalidate() { }
+    override fun invalidate() {}
 }
 
 class ViewModelStoreTest : BaseTest() {
@@ -113,10 +110,12 @@ class ViewModelStoreTest : BaseTest() {
     fun testActivityViewModelRetainedAcrossConfigurationChanges() {
         val (controller, fragment) = createFragment<ViewModelStoreTestFragment, TestMvRxActivity>()
         fragment.viewModelActivity.setCount(2)
-        controller.configurationChange(Configuration().apply {
-            setToDefaults()
-            this.orientation = Configuration.ORIENTATION_LANDSCAPE
-        })
+        controller.configurationChange(
+            Configuration().apply {
+                setToDefaults()
+                this.orientation = Configuration.ORIENTATION_LANDSCAPE
+            }
+        )
         val recreatedFragment = controller.mvRxFragment<ViewModelStoreTestFragment>()
         assertNotEquals(fragment, recreatedFragment)
         withState(recreatedFragment.viewModelActivity) { state ->
@@ -130,10 +129,12 @@ class ViewModelStoreTest : BaseTest() {
     fun testPersistedStateForActivityViewModelWhenSetFromFragmentArgsAfterConfigurationChange() {
         val (controller, fragment) = createFragment<ViewModelStoreTestFragment, TestMvRxActivity>(args = ViewModelStoreTestArgs(3))
         fragment.viewModelActivity.setCount(2)
-        controller.configurationChange(Configuration().apply {
-            setToDefaults()
-            this.orientation = Configuration.ORIENTATION_LANDSCAPE
-        })
+        controller.configurationChange(
+            Configuration().apply {
+                setToDefaults()
+                this.orientation = Configuration.ORIENTATION_LANDSCAPE
+            }
+        )
         val bundleTwo = Bundle()
         controller.saveInstanceState(bundleTwo)
 
@@ -174,10 +175,12 @@ class ViewModelStoreTest : BaseTest() {
     fun testFragmentViewModelRetainedAcrossConfigurationChanges() {
         val (controller, fragment) = createFragment<ViewModelStoreTestFragment, TestMvRxActivity>()
         fragment.viewModelFragment.setCount(2)
-        controller.configurationChange(Configuration().apply {
-            setToDefaults()
-            this.orientation = Configuration.ORIENTATION_LANDSCAPE
-        })
+        controller.configurationChange(
+            Configuration().apply {
+                setToDefaults()
+                this.orientation = Configuration.ORIENTATION_LANDSCAPE
+            }
+        )
         val recreatedFragment = controller.mvRxFragment<ViewModelStoreTestFragment>()
         assertNotEquals(fragment, recreatedFragment)
         withState(recreatedFragment.viewModelFragment) { state ->
@@ -191,10 +194,12 @@ class ViewModelStoreTest : BaseTest() {
     fun testPersistedStateForFragmentViewModelWhenSetFromFragmentArgsAfterConfigurationChange() {
         val (controller, fragment) = createFragment<ViewModelStoreTestFragment, TestMvRxActivity>(args = ViewModelStoreTestArgs(3))
         fragment.viewModelFragment.setCount(2)
-        controller.configurationChange(Configuration().apply {
-            setToDefaults()
-            this.orientation = Configuration.ORIENTATION_LANDSCAPE
-        })
+        controller.configurationChange(
+            Configuration().apply {
+                setToDefaults()
+                this.orientation = Configuration.ORIENTATION_LANDSCAPE
+            }
+        )
         val bundleTwo = Bundle()
         controller.saveInstanceState(bundleTwo)
 
@@ -218,7 +223,7 @@ class ViewModelStoreTest : BaseTest() {
     fun testViewModelInActivityWithArgs() {
         val args = ViewModelStoreTestArgs(3)
         val intent = Intent()
-        intent.putExtra(MvRx.KEY_ARG, args)
+        intent.putExtra(Mavericks.KEY_ARG, args)
 
         val controller = Robolectric.buildActivity(ViewModelStoreActivity::class.java, intent).setup()
         withState(controller.get().viewModel) { state ->
@@ -231,7 +236,7 @@ class ViewModelStoreTest : BaseTest() {
     fun testViewModelInActivityWithSavedInstanceState() {
         val args = ViewModelStoreTestArgs(3)
         val intent = Intent()
-        intent.putExtra(MvRx.KEY_ARG, args)
+        intent.putExtra(Mavericks.KEY_ARG, args)
 
         val controller = Robolectric.buildActivity(ViewModelStoreActivity::class.java, intent).setup()
 

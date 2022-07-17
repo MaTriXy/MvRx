@@ -1,58 +1,31 @@
 apply plugin: "com.android.application"
 apply plugin: "kotlin-android"
-apply plugin: "kotlin-android-extensions"
 
 android {
-    compileSdkVersion versions.compileSdk
-    buildToolsVersion versions.buildTools
-
     defaultConfig {
         applicationId 'com.airbnb.mvrx.counter'
-        minSdkVersion versions.minSdk
-        targetSdkVersion versions.targetSdk
         versionCode 1
         versionName '1.0'
     }
 
-    signingConfigs {
-        release {
-            storeFile file("counter.keystore")
-            storePassword "counter"
-            keyAlias "counter-release"
-            keyPassword "counter"
-        }
-    }
-
-    buildTypes {
-        debug {
-            signingConfig signingConfigs.release
-        }
-        release {
-            signingConfig signingConfigs.release
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-project.pro"
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
+    buildFeatures {
+        viewBinding true
     }
 }
 
-dependencies {
-    implementation libraries.appcompat
-    implementation libraries.constraintlayout
-    implementation libraries.coreKtx
-    implementation libraries.lifecycleExtensions
-    implementation libraries.kotlin
-    implementation project(":mvrx")
+tasks.withType(Test) {
+    useJUnitPlatform()
+}
 
-    testImplementation testLibraries.junit
+dependencies {
+    implementation Libraries.appcompat
+    implementation Libraries.constraintlayout
+    implementation Libraries.coreKtx
+    implementation Libraries.lifecycleCommon
+    implementation project(":mvrx")
+    implementation project(":view-binding-utils")
+
+    testImplementation TestLibraries.junit
+    testImplementation TestLibraries.junit5
     testImplementation project(":testing")
 }
