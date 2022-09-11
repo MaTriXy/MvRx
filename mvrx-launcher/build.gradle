@@ -1,0 +1,53 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-kapt'
+apply plugin: "com.vanniktech.maven.publish"
+
+tasks.withType(KotlinCompile).all {
+    kotlinOptions {
+        freeCompilerArgs += [
+                '-opt-in=com.airbnb.mvrx.InternalMavericksApi',
+        ]
+    }
+}
+
+android {
+    resourcePrefix 'mavericks_'
+
+    defaultConfig {
+        consumerProguardFiles 'proguard-rules.pro'
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+}
+
+dependencies {
+    implementation project(':mvrx')
+    implementation project(':mvrx-mocking')
+
+    api libs.kotlinCoroutines
+
+    implementation libs.coreKtx
+    implementation libs.epoxy
+    kapt libs.epoxyProcessor
+    implementation libs.recyclerview
+    implementation libs.coordinatorLayout
+    implementation libs.kotlinReflect
+    implementation libs.appcompat
+    implementation libs.fragment
+    implementation libs.viewModelSavedState
+    implementation libs.lifecycleCommon
+    implementation libs.viewModelKtx
+    implementation libs.runtimeKtx
+
+
+    testImplementation libs.kotlinCoroutinesTest
+    testImplementation libs.mockito
+    testImplementation libs.roboeletric
+}

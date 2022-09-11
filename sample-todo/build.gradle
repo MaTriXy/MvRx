@@ -1,0 +1,47 @@
+apply plugin: "com.android.application"
+apply plugin: "kotlin-android"
+apply plugin: "kotlin-kapt"
+apply plugin: "kotlin-parcelize"
+
+android {
+
+    defaultConfig {
+        applicationId "com.airbnb.mvrx.todoapp"
+        versionCode 1
+        versionName "0.0.1"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        multiDexEnabled true
+    }
+
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+
+dependencies {
+    implementation project(":mvrx-rxjava2")
+    implementation project(':mvrx-mocking')
+    implementation project(':utils-view-binding')
+    kapt libs.epoxyProcessor
+    kapt libs.roomCompiler
+
+    implementation libs.appcompat
+    implementation libs.constraintlayout
+    implementation(libs.epoxy) { exclude group: "com.android.support" }
+    implementation libs.espressoIdlingResource
+    implementation libs.lifecycleCommon
+    implementation libs.navigationFragmentKtx
+    implementation libs.navigationUiKtx
+    implementation libs.recyclerview
+    implementation libs.roomRuntime
+    implementation libs.roomRxJava
+    implementation libs.rxAndroid
+    implementation libs.rxJava
+    implementation libs.multidex
+
+    testImplementation libs.junit
+    testImplementation libs.mockitoKotlin
+    testImplementation project(":mvrx-testing")
+}

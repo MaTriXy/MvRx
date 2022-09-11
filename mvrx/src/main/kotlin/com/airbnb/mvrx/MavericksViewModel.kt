@@ -2,26 +2,15 @@ package com.airbnb.mvrx
 
 import androidx.annotation.CallSuper
 import androidx.lifecycle.LifecycleOwner
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.plus
-import kotlinx.coroutines.yield
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.reflect.KProperty1
 
 /**
@@ -34,9 +23,9 @@ import kotlin.reflect.KProperty1
  * Other classes can observe the state via [stateFlow].
  */
 abstract class MavericksViewModel<S : MavericksState>(
-    initialState: S
+    initialState: S,
+    configFactory: MavericksViewModelConfigFactory = Mavericks.viewModelConfigFactory,
 ) {
-
     // Use the same factory for the life of the viewmodel, as it might change after this viewmodel is created (especially during tests)
     @PublishedApi
     internal val configFactory = Mavericks.viewModelConfigFactory
@@ -50,19 +39,16 @@ abstract class MavericksViewModel<S : MavericksState>(
 
     val viewModelScope = config.coroutineScope
 
-    private val stateStore = config.stateStore
+    private val repository = Repository()
     private val lastDeliveredStates = ConcurrentHashMap<String, Any?>()
     private val activeSubscriptions = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
-
-    private val tag by lazy { javaClass.simpleName }
-    private val mutableStateChecker = if (config.debugMode) MutableStateChecker(initialState) else null
 
     /**
      * Synchronous access to state is not exposed externally because there is no guarantee that
      * all setState reducers have run yet.
      */
     internal val state: S
-        get() = stateStore.state
+        get() = repository.state
 
     /**
      * Return the current state as a Flow. For certain situations, this may be more convenient
@@ -75,7 +61,7 @@ abstract class MavericksViewModel<S : MavericksState>(
      * be used as it is guaranteed to be run after all pending setState reducers have run.
      */
     val stateFlow: Flow<S>
-        get() = stateStore.flow
+        get() = repository.stateFlow
 
     init {
         if (config.debugMode) {
@@ -95,7 +81,6 @@ abstract class MavericksViewModel<S : MavericksState>(
      * a fair amount of reflection.
      */
     private fun validateState(initialState: S) {
-        assertMavericksDataClassImmutability(state::class)
         // Assert that state can be saved and restored.
         val bundle = persistMavericksState(state = state, validation = true)
         restorePersistedMavericksState(bundle, initialState, validation = true)
@@ -107,50 +92,11 @@ abstract class MavericksViewModel<S : MavericksState>(
      * 1) It will not be called synchronously or on the same thread. This is for performance and accuracy reasons.
      * 2) Similar to the execute lambda above, the current state is the state receiver so the `count` in `count + 1` is actually the count
      *    property of the state at the time that the lambda is called.
-     * 3) In development, MvRx will do checks to make sure that your setState is pure by calling in multiple times. As a result, DO NOT use
+     * 3) In development, Mavericks will do checks to make sure that your setState is pure by calling in multiple times. As a result, DO NOT use
      *    mutable variables or properties from outside the lambda or else it may crash.
      */
     protected fun setState(reducer: S.() -> S) {
-        if (config.debugMode) {
-            // Must use `set` to ensure the validated state is the same as the actual state used in reducer
-            // Do not use `get` since `getState` queue has lower priority and the validated state would be the state after reduced
-            stateStore.set {
-                val firstState = this.reducer()
-                val secondState = this.reducer()
-
-                if (firstState != secondState) {
-                    @Suppress("UNCHECKED_CAST")
-                    val changedProp = firstState::class.java.declaredFields.asSequence()
-                        .onEach { it.isAccessible = true }
-                        .firstOrNull { property ->
-                            @Suppress("Detekt.TooGenericExceptionCaught")
-                            try {
-                                property.get(firstState) != property.get(secondState)
-                            } catch (e: Throwable) {
-                                false
-                            }
-                        }
-                    if (changedProp != null) {
-                        throw IllegalArgumentException(
-                            "Impure reducer set on ${this@MavericksViewModel::class.java.simpleName}! " +
-                                "${changedProp.name} changed from ${changedProp.get(firstState)} " +
-                                "to ${changedProp.get(secondState)}. " +
-                                "Ensure that your state properties properly implement hashCode."
-                        )
-                    } else {
-                        throw IllegalArgumentException(
-                            "Impure reducer set on ${this@MavericksViewModel::class.java.simpleName}! Differing states were provided by the same reducer." +
-                                "Ensure that your state properties properly implement hashCode. First state: $firstState -> Second state: $secondState"
-                        )
-                    }
-                }
-                mutableStateChecker?.onStateChanged(firstState)
-
-                firstState
-            }
-        } else {
-            stateStore.set(reducer)
-        }
+        repository.setStateInternal(reducer)
     }
 
     /**
@@ -158,9 +104,7 @@ abstract class MavericksViewModel<S : MavericksState>(
      * As a result, it is safe to call setState { } and assume that the result from a subsequent awaitState() call will have that state.
      */
     suspend fun awaitState(): S {
-        val deferredState = CompletableDeferred<S>()
-        withState(deferredState::complete)
-        return deferredState.await()
+        return repository.awaitState()
     }
 
     /**
@@ -168,7 +112,7 @@ abstract class MavericksViewModel<S : MavericksState>(
      * updates are processed.
      */
     protected fun withState(action: (state: S) -> Unit) {
-        stateStore.get(action)
+        repository.withStateInternal(action)
     }
 
     /**
@@ -204,27 +148,8 @@ abstract class MavericksViewModel<S : MavericksState>(
         retainValue: KProperty1<S, Async<T>>? = null,
         reducer: S.(Async<T>) -> S
     ): Job {
-        val blockExecutions = config.onExecute(this@MavericksViewModel)
-        if (blockExecutions != MavericksViewModelConfig.BlockExecutions.No) {
-            if (blockExecutions == MavericksViewModelConfig.BlockExecutions.WithLoading) {
-                setState { reducer(Loading()) }
-            }
-            // Simulate infinite loading
-            return viewModelScope.launch { delay(Long.MAX_VALUE) }
-        }
-
-        setState { reducer(Loading(value = retainValue?.get(this)?.invoke())) }
-
-        return viewModelScope.launch(dispatcher ?: EmptyCoroutineContext) {
-            try {
-                val result = invoke()
-                setState { reducer(Success(result)) }
-            } catch (e: CancellationException) {
-                @Suppress("RethrowCaughtException")
-                throw e
-            } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
-                setState { reducer(Fail(e, value = retainValue?.get(this)?.invoke())) }
-            }
+        return with(repository) {
+            executeInternal(dispatcher, retainValue, reducer)
         }
     }
 
@@ -244,20 +169,9 @@ abstract class MavericksViewModel<S : MavericksState>(
         retainValue: KProperty1<S, Async<T>>? = null,
         reducer: S.(Async<T>) -> S
     ): Job {
-        val blockExecutions = config.onExecute(this@MavericksViewModel)
-        if (blockExecutions != MavericksViewModelConfig.BlockExecutions.No) {
-            if (blockExecutions == MavericksViewModelConfig.BlockExecutions.WithLoading) {
-                setState { reducer(Loading(value = retainValue?.get(this)?.invoke())) }
-            }
-            // Simulate infinite loading
-            return viewModelScope.launch { delay(Long.MAX_VALUE) }
+        return with(repository) {
+            executeInternal(dispatcher, retainValue, reducer)
         }
-
-        setState { reducer(Loading(value = retainValue?.get(this)?.invoke())) }
-
-        return catch { error -> setState { reducer(Fail(error, value = retainValue?.get(this)?.invoke())) } }
-            .onEach { value -> setState { reducer(Success(value)) } }
-            .launchIn(viewModelScope + (dispatcher ?: EmptyCoroutineContext))
     }
 
     /**
@@ -272,15 +186,9 @@ abstract class MavericksViewModel<S : MavericksState>(
         dispatcher: CoroutineDispatcher? = null,
         reducer: S.(T) -> S
     ): Job {
-        val blockExecutions = config.onExecute(this@MavericksViewModel)
-        if (blockExecutions != MavericksViewModelConfig.BlockExecutions.No) {
-            // Simulate infinite work
-            return viewModelScope.launch { delay(Long.MAX_VALUE) }
+        return with(repository) {
+            setOnEachInternal(dispatcher, reducer)
         }
-
-        return onEach {
-            setState { reducer(it) }
-        }.launchIn(viewModelScope + (dispatcher ?: EmptyCoroutineContext))
     }
 
     /**
@@ -291,7 +199,7 @@ abstract class MavericksViewModel<S : MavericksState>(
      */
     protected fun onEach(
         action: suspend (S) -> Unit
-    ) = _internal(null, RedeliverOnStart, action)
+    ) = repository._internal(action)
 
     /**
      * Subscribe to state changes for a single property.
@@ -302,7 +210,7 @@ abstract class MavericksViewModel<S : MavericksState>(
     protected fun <A> onEach(
         prop1: KProperty1<S, A>,
         action: suspend (A) -> Unit
-    ) = _internal1(null, prop1, action = action)
+    ) = repository._internal1(prop1, action = action)
 
     /**
      * Subscribe to state changes for two properties.
@@ -314,7 +222,7 @@ abstract class MavericksViewModel<S : MavericksState>(
         prop1: KProperty1<S, A>,
         prop2: KProperty1<S, B>,
         action: suspend (A, B) -> Unit
-    ) = _internal2(null, prop1, prop2, action = action)
+    ) = repository._internal2(prop1, prop2, action = action)
 
     /**
      * Subscribe to state changes for three properties.
@@ -327,7 +235,7 @@ abstract class MavericksViewModel<S : MavericksState>(
         prop2: KProperty1<S, B>,
         prop3: KProperty1<S, C>,
         action: suspend (A, B, C) -> Unit
-    ) = _internal3(null, prop1, prop2, prop3, action = action)
+    ) = repository._internal3(prop1, prop2, prop3, action = action)
 
     /**
      * Subscribe to state changes for four properties.
@@ -341,7 +249,7 @@ abstract class MavericksViewModel<S : MavericksState>(
         prop3: KProperty1<S, C>,
         prop4: KProperty1<S, D>,
         action: suspend (A, B, C, D) -> Unit
-    ) = _internal4(null, prop1, prop2, prop3, prop4, action = action)
+    ) = repository._internal4(prop1, prop2, prop3, prop4, action = action)
 
     /**
      * Subscribe to state changes for five properties.
@@ -356,7 +264,7 @@ abstract class MavericksViewModel<S : MavericksState>(
         prop4: KProperty1<S, D>,
         prop5: KProperty1<S, E>,
         action: suspend (A, B, C, D, E) -> Unit
-    ) = _internal5(null, prop1, prop2, prop3, prop4, prop5, action = action)
+    ) = repository._internal5(prop1, prop2, prop3, prop4, prop5, action = action)
 
     /**
      * Subscribe to state changes for six properties.
@@ -372,7 +280,7 @@ abstract class MavericksViewModel<S : MavericksState>(
         prop5: KProperty1<S, E>,
         prop6: KProperty1<S, F>,
         action: suspend (A, B, C, D, E, F) -> Unit
-    ) = _internal6(null, prop1, prop2, prop3, prop4, prop5, prop6, action = action)
+    ) = repository._internal6(prop1, prop2, prop3, prop4, prop5, prop6, action = action)
 
     /**
      * Subscribe to state changes for seven properties.
@@ -389,7 +297,7 @@ abstract class MavericksViewModel<S : MavericksState>(
         prop6: KProperty1<S, F>,
         prop7: KProperty1<S, G>,
         action: suspend (A, B, C, D, E, F, G) -> Unit
-    ) = _internal7(null, prop1, prop2, prop3, prop4, prop5, prop6, prop7, action = action)
+    ) = repository._internal7(prop1, prop2, prop3, prop4, prop5, prop6, prop7, action = action)
 
     /**
      * Subscribe to changes in an async property. There are optional parameters for onSuccess
@@ -404,7 +312,7 @@ abstract class MavericksViewModel<S : MavericksState>(
         asyncProp: KProperty1<S, Async<T>>,
         onFail: (suspend (Throwable) -> Unit)? = null,
         onSuccess: (suspend (T) -> Unit)? = null
-    ) = _internalSF(null, asyncProp, RedeliverOnStart, onFail, onSuccess)
+    ) = repository._internalSF(asyncProp, onFail, onSuccess)
 
     @Suppress("EXPERIMENTAL_API_USAGE")
     internal fun <T : Any> Flow<T>.resolveSubscription(
@@ -415,21 +323,52 @@ abstract class MavericksViewModel<S : MavericksState>(
         return if (lifecycleOwner != null) {
             collectLatest(lifecycleOwner, lastDeliveredStates, activeSubscriptions, deliveryMode, action)
         } else {
-            (viewModelScope + configFactory.subscriptionCoroutineContextOverride).launch(start = CoroutineStart.UNDISPATCHED) {
-                // Use yield to ensure flow collect coroutine is dispatched rather than invoked immediately.
-                // This is necessary when Dispatchers.Main.immediate is used in scope.
-                // Coroutine is launched with start = CoroutineStart.UNDISPATCHED to perform dispatch only once.
-                yield()
-                collectLatest(action)
+            with(repository) {
+                resolveSubscription(action)
             }
         }
     }
 
-    private fun <S : MavericksState> assertSubscribeToDifferentViewModel(viewModel: MavericksViewModel<S>) {
-        require(this != viewModel) {
-            "This method is for subscribing to other view models. Please pass a different instance as the argument."
+    override fun toString(): String = "${this::class.java.simpleName} $state"
+
+    private inner class Repository : MavericksRepository<S>(
+        MavericksRepositoryConfig(
+            performCorrectnessValidations = config.debugMode,
+            stateStore = config.stateStore,
+            coroutineScope = config.coroutineScope,
+            subscriptionCoroutineContextOverride = config.subscriptionCoroutineContextOverride,
+            onExecute = { config.onExecute(this@MavericksViewModel) },
+        )
+    ) {
+        fun setStateInternal(reducer: S.() -> S) {
+            setState(reducer)
+        }
+
+        fun withStateInternal(action: (state: S) -> Unit) {
+            withState(action)
+        }
+
+        fun <T : Any?> (suspend () -> T).executeInternal(
+            dispatcher: CoroutineDispatcher? = null,
+            retainValue: KProperty1<S, Async<T>>? = null,
+            reducer: S.(Async<T>) -> S
+        ): Job {
+            return execute(dispatcher, retainValue, reducer)
+        }
+
+        fun <T> Flow<T>.executeInternal(
+            dispatcher: CoroutineDispatcher? = null,
+            retainValue: KProperty1<S, Async<T>>? = null,
+            reducer: S.(Async<T>) -> S
+        ): Job {
+            return execute(dispatcher, retainValue, reducer)
+        }
+
+        fun <T> Flow<T>.setOnEachInternal(
+            dispatcher: CoroutineDispatcher? = null,
+            reducer: S.(T) -> S
+        ): Job {
+            return setOnEach(dispatcher, reducer)
         }
     }
-
-    override fun toString(): String = "${this::class.java.simpleName} $state"
 }

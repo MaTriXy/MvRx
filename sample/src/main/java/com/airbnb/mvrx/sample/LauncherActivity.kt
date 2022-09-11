@@ -2,6 +2,7 @@ package com.airbnb.mvrx.sample
 
 import android.os.Bundle
 import android.os.Handler
+import android.os.Looper
 import androidx.appcompat.app.AppCompatActivity
 import androidx.collection.SparseArrayCompat
 import androidx.fragment.app.Fragment
@@ -16,10 +17,10 @@ import com.airbnb.mvrx.launcher.MavericksLauncherMockActivity.Companion.showNext
 
 /**
  * This class provides a custom implementation for handling launched mocks, by overriding
- * the default behavior in MvRxLauncherMockActivity.
+ * the default behavior in MavericksLauncherMockActivity.
  *
  * The Application class was overridden to set this behavior change:
- * `MvRxLauncherMockActivity.activityToShowMock = LauncherActivity::class`
+ * `MavericksLauncherMockActivity.activityToShowMock = LauncherActivity::class`
  *
  * This is needed so we can support the navigation architecture that is used.
  *
@@ -34,7 +35,7 @@ class LauncherActivity : AppCompatActivity() {
         if (savedInstanceState == null) {
             // This is posted so that the nav graph can set its initial fragment first, otherwise
             // it will override the one we set.
-            Handler().post {
+            Handler(Looper.getMainLooper()).post {
                 showNextMockFromActivity(
                     activity = this,
                     showView = { showFragmentWithNavigation(it) }

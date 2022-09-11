@@ -1,6 +1,8 @@
 package com.airbnb.mvrx
 
+import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.CoroutineScope
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Provides configuration for a [MavericksViewModel].
@@ -18,13 +20,20 @@ abstract class MavericksViewModelConfig<S : Any>(
     /**
      * The coroutine scope that will be provided to the view model.
      */
-    val coroutineScope: CoroutineScope
+    val coroutineScope: CoroutineScope,
+    /**
+     * Provide a context that will be added to the coroutine scope when a subscription is registered (eg [MavericksView.onEach]).
+     *
+     * By default subscriptions use [MavericksView.subscriptionLifecycleOwner] and [LifecycleOwner.lifecycleScope] to
+     * retrieve a coroutine scope to launch the subscription in.
+     */
+    val subscriptionCoroutineContextOverride: CoroutineContext
 ) {
     /**
-     * Called each time a [MavericksViewModel.execute] function is invoked. This allows
-     * the execute function to be skipped, based on the returned [BlockExecutions] value.
+     * Called each time a [MavericksRepository.execute] function is invoked. This allows
+     * the execute function to be skipped, based on the returned [MavericksBlockExecutions] value.
      *
-     * This is intended to be used to allow the ViewModel to be mocked out for testing.
+     * This is intended to be used to allow the [MavericksRepository] to be mocked out for testing.
      * Blocking calls to execute prevents long running asynchronous operations from changing the
      * state later on when the calls complete.
      *
@@ -36,25 +45,5 @@ abstract class MavericksViewModelConfig<S : Any>(
      * is "enabled", even if the execute was performed when the state store was "disabled" and we
      * didn't intend to allow operations to change the state.
      */
-    abstract fun <S : MavericksState> onExecute(
-        viewModel: MavericksViewModel<S>
-    ): BlockExecutions
-
-    /**
-     * Defines whether a [MavericksViewModel.execute] invocation should not be run.
-     */
-    enum class BlockExecutions {
-        /** Run the execute block normally. */
-        No,
-
-        /** Block the execute call from having an impact. */
-        Completely,
-
-        /**
-         * Block the execute call from having an impact from values returned by the object
-         * being executed, but perform one state callback to set the Async property to loading
-         * as if the call is actually happening.
-         */
-        WithLoading
-    }
+    abstract fun <S : MavericksState> onExecute(viewModel: MavericksViewModel<S>): MavericksBlockExecutions
 }

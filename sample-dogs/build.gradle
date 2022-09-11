@@ -1,0 +1,35 @@
+apply plugin: "com.android.application"
+apply plugin: "kotlin-android"
+apply plugin: "kotlin-kapt"
+
+android {
+
+    defaultConfig {
+        applicationId "com.airbnb.mvrx.dogs"
+        versionCode 1
+        versionName "1.0"
+        multiDexEnabled true
+    }
+
+    buildFeatures {
+        dataBinding true
+    }
+}
+
+dependencies {
+    implementation project(":mvrx-rxjava2")
+    implementation project(":utils-view-binding")
+    implementation libs.appcompat
+    implementation libs.cardview
+    implementation libs.constraintlayout
+    implementation libs.coreKtx
+    implementation libs.epoxy
+    implementation libs.lottie
+    implementation libs.multidex
+    implementation libs.navigationFragmentKtx
+    implementation libs.navigationUiKtx
+    implementation libs.picasso
+
+    testImplementation project(":mvrx-testing")
+    testImplementation libs.junit
+}
