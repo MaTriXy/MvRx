@@ -7,6 +7,7 @@ buildscript {
     }
     dependencies {
         classpath libs.androidGradle
+        classpath libs.anvilGradle
         classpath libs.kotlinGradle
         classpath libs.hiltGradle
 
@@ -51,7 +52,7 @@ subprojects { project ->
 
         if (project.hasProperty("android")) {
             android {
-                compileSdkVersion  32
+                compileSdkVersion  33
 
                 defaultConfig {
                     // Allow projects to override this.
